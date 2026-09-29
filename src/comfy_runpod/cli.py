@@ -137,22 +137,53 @@ def cmd_up(args) -> int:
 handlers["up"] = cmd_up
 
 
+def _proc_available() -> bool:
+    """Whether /proc exists at all. False on a platform without it (this
+    NixOS machine always has it, but the check must still degrade safely
+    elsewhere) -- the ssh-identity check below cannot be performed there."""
+    return Path("/proc").is_dir()
+
+
 def _pid_cmdline(pid: int) -> str:
-    """Space-joined argv of a running process, read from /proc. Raises
-    FileNotFoundError if the pid no longer exists, or another OSError (e.g.
-    PermissionError) if it exists but could not be read -- which happens
-    when it now belongs to a different process entirely."""
+    """Space-joined argv of a running process, read from /proc. Only
+    meaningful once _proc_available() is true. Raises FileNotFoundError if
+    the pid no longer exists, or another OSError (e.g. PermissionError) if
+    it exists but could not be read -- which happens when it now belongs to
+    a different process entirely."""
     raw = Path(f"/proc/{pid}/cmdline").read_bytes()
     return raw.replace(b"\0", b" ").decode(errors="replace")
 
 
+def _send_sigterm(pid: int) -> None:
+    try:
+        os.kill(pid, signal.SIGTERM)
+    except ProcessLookupError:
+        pass  # gone between the caller's check and this signal
+
+
 def _kill_tunnel(pid: int | None, port: int | None) -> None:
     """SIGTERM the tunnel, but only after confirming the pid is still our ssh
-    process. A long `up` -> work -> `down` session can outlive the tunnel,
-    and Linux recycles pids, so signalling a bare pid with no identity check
-    risks hitting an unrelated process that happens to have inherited it."""
+    process where that can be checked at all. A long `up` -> work -> `down`
+    session can outlive the tunnel, and Linux recycles pids, so signalling a
+    bare pid with no identity check risks hitting an unrelated process that
+    happens to have inherited it.
+
+    But without /proc there is no way to check at all, and silently
+    refusing to kill in that case would leak the ssh process forever, which
+    is worse than the small risk the check exists to guard against -- so
+    that case warns plainly and kills anyway. /proc present but the pid
+    gone is the ordinary, expected way a tunnel is already gone (stays
+    silent). /proc present and the pid exists but doesn't look like our
+    tunnel warns and skips.
+    """
     if not pid:
         return
+
+    if not _proc_available():
+        print(f"tunnel pid {pid} cannot be verified on this platform (no /proc) — killing it anyway")
+        _send_sigterm(pid)
+        return
+
     try:
         cmdline = _pid_cmdline(pid)
     except FileNotFoundError:
@@ -165,10 +196,7 @@ def _kill_tunnel(pid: int | None, port: int | None) -> None:
         print(f"tunnel pid {pid} no longer looks like our ssh tunnel — not signalling it")
         return
 
-    try:
-        os.kill(pid, signal.SIGTERM)
-    except ProcessLookupError:
-        pass  # gone between the check above and the signal
+    _send_sigterm(pid)
 
 
 def cmd_down(args) -> int:

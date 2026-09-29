@@ -445,6 +445,30 @@ def test_cmd_down_declines_to_signal_when_tunnel_port_was_never_recorded(
     assert killed == []
 
 
+def test_cmd_down_kills_the_tunnel_anyway_when_proc_is_unavailable(
+    monkeypatch, tmp_path, capsys
+):
+    """Fix round 2: on a platform with no /proc at all, the identity check
+    cannot be performed -- silently refusing to kill would leak an orphaned
+    ssh -N forever (the pre-identity-check code always killed unconditionally,
+    so this must not regress that). Must warn plainly and kill anyway."""
+    monkeypatch.chdir(tmp_path)
+    write_state({"pod_id": "pod-1", "started": 1000, "tunnel_pid": 8888, "tunnel_port": 8188})
+    client = FakeCliClient()
+    monkeypatch.setattr(cli, "_client", lambda: client)
+    monkeypatch.setattr(cli, "_proc_available", lambda: False)
+    killed = []
+    monkeypatch.setattr(cli.os, "kill", lambda pid, sig: killed.append((pid, sig)))
+
+    rc = cli.cmd_down(argparse.Namespace())
+
+    assert rc == 0
+    assert killed == [(8888, signal.SIGTERM)]  # killed anyway, not skipped
+    out = capsys.readouterr().out.lower()
+    assert "8888" in out
+    assert "no /proc" in out or "cannot be verified" in out
+
+
 def test_cmd_down_reports_unknown_spend_rather_than_crashing(monkeypatch, tmp_path, capsys):
     monkeypatch.chdir(tmp_path)
     write_state({"pod_id": "pod-1", "started": 1000})
