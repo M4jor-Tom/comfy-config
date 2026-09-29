@@ -56,7 +56,7 @@ def _load_yaml(path: Path) -> dict:
     return raw
 
 
-def _duration_seconds(value: object) -> int:
+def _duration_seconds(path: Path, value: object) -> int:
     """Accept 3h / 45m / 90s / bare seconds."""
     if isinstance(value, int):
         return value
@@ -66,11 +66,11 @@ def _duration_seconds(value: object) -> int:
         try:
             return int(text)
         except ValueError as e:
-            raise ConfigError(f"terminate_after {value!r} is not a duration") from e
+            raise ConfigError(f"{path}: terminate_after {value!r} is not a duration") from e
     try:
         return int(text[:-1]) * mult
     except ValueError as e:
-        raise ConfigError(f"terminate_after {value!r} is not a duration") from e
+        raise ConfigError(f"{path}: terminate_after {value!r} is not a duration") from e
 
 
 def load_infra(path: Path) -> Infra:
@@ -84,7 +84,7 @@ def load_infra(path: Path) -> Infra:
     gpus = []
     for entry in gpus_raw:
         if not isinstance(entry, dict) or "id" not in entry:
-            raise ConfigError(f"{path}: each gpus entry needs an 'id'")
+            raise ConfigError(f"{path}: each gpus entry needs an 'id', got {entry!r}")
         if "template" not in entry:
             raise ConfigError(
                 f"{path}: gpu {entry['id']!r} needs a 'template' — the ComfyUI "
@@ -96,7 +96,7 @@ def load_infra(path: Path) -> Infra:
         datacenter=str(raw["datacenter"]),
         gpus=gpus,
         volume_id=(str(raw["volume_id"]) if raw.get("volume_id") else None),
-        terminate_after_seconds=_duration_seconds(raw.get("terminate_after", "3h")),
+        terminate_after_seconds=_duration_seconds(path, raw.get("terminate_after", "3h")),
     )
 
 
@@ -118,10 +118,19 @@ def load_run(path: Path) -> Run:
     size = raw.get("size", [1024, 1024])
     if not (isinstance(size, (list, tuple)) and len(size) == 2):
         raise ConfigError(f"{path}: size must be [width, height], got {size!r}")
-    width, height = int(size[0]), int(size[1])
+    try:
+        width, height = int(size[0]), int(size[1])
+    except (ValueError, TypeError) as e:
+        raise ConfigError(f"{path}: size dimensions must be integers, got {size!r}") from e
 
     seed_raw = raw.get("seed", "random")
-    seed = None if str(seed_raw) == "random" else int(seed_raw)
+    if str(seed_raw) == "random":
+        seed = None
+    else:
+        try:
+            seed = int(seed_raw)
+        except (ValueError, TypeError) as e:
+            raise ConfigError(f"{path}: seed {seed_raw!r} is not an integer or 'random'") from e
 
     input_path: Path | None = None
     if raw.get("input"):

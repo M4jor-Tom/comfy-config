@@ -66,6 +66,13 @@ def test_volume_id_absent_is_none(tmp_path):
     assert load_infra(p).volume_id is None
 
 
+def test_load_infra_rejects_bad_terminate_after(tmp_path):
+    p = tmp_path / "comfy.yaml"
+    p.write_text('datacenter: EU-RO-1\ngpus:\n  - { id: "X", template: "t" }\nterminate_after: badvalue\n')
+    with pytest.raises(ConfigError, match="terminate_after"):
+        load_infra(p)
+
+
 RUN = """
 mode: t2i
 prompt: "a fox in a misty forest"
@@ -129,6 +136,20 @@ def test_load_run_rejects_zero_count(tmp_path):
     p = tmp_path / "run.yaml"
     p.write_text(RUN.replace("count: 16", "count: 0"))
     with pytest.raises(ConfigError, match="count"):
+        load_run(p)
+
+
+def test_load_run_rejects_non_integer_seed(tmp_path):
+    p = tmp_path / "run.yaml"
+    p.write_text(RUN.replace("seed: random", "seed: banana"))
+    with pytest.raises(ConfigError, match="seed"):
+        load_run(p)
+
+
+def test_load_run_rejects_non_integer_size_dimensions(tmp_path):
+    p = tmp_path / "run.yaml"
+    p.write_text(RUN.replace("size: [1024, 1024]", "size: [abc, 600]"))
+    with pytest.raises(ConfigError, match="size"):
         load_run(p)
 
 
