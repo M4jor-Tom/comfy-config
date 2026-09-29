@@ -40,6 +40,9 @@ _JOB_TIMEOUT = 1800
 # How long to wait for a freshly created pod to expose SSH (runtime.ports).
 _SSH_READY_TIMEOUT = 900
 
+# Runpod network-volume pricing: $0.07/GB/month for the first 1 TB.
+_VOLUME_GB_MONTHLY_USD = 0.07
+
 
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(prog="comfy", description=__doc__)
@@ -51,6 +54,12 @@ def build_parser() -> argparse.ArgumentParser:
     r.add_argument("--keep", action="store_true", help="do not terminate when done")
     sub.add_parser("down", help="terminate the pod and report spend")
     sub.add_parser("status", help="show pod state and real spend")
+    t = sub.add_parser("teardown", help="stop all billing: terminate pods, report volumes")
+    t.add_argument(
+        "--delete-volume",
+        action="store_true",
+        help="also delete every volume — irreversible, destroys downloaded models",
+    )
     return p
 
 
@@ -270,6 +279,51 @@ def cmd_status(args) -> int:
 
 
 handlers["status"] = cmd_status
+
+
+def cmd_teardown(args) -> int:
+    """Stop all billing. Terminates every pod unconditionally; a volume is
+    only ever deleted with --delete-volume, since that irreversibly destroys
+    every downloaded model. The last line printed always says plainly
+    whether anything is still costing money."""
+    client = _client()
+
+    pods = client.list_pods()
+    for pod in pods:
+        print(f"terminating {pod['id']} ({pod.get('name', '?')})")
+        client.terminate_pod(pod["id"])
+    clear_state()
+    if not pods:
+        print("no pods running")
+
+    volumes = client.list_volumes()
+    if not volumes:
+        print("no volumes — nothing is billing")
+        return 0
+
+    total = 0.0
+    for v in volumes:
+        size = v.get("size", 0)
+        cost = size * _VOLUME_GB_MONTHLY_USD
+        total += cost
+        print(f"volume {v.get('id')}  {size} GB  ~${cost:.2f}/month")
+
+    if not args.delete_volume:
+        print(
+            f"\nstill billing: ~${total:.2f}/month across {len(volumes)} volume(s). "
+            "`comfy teardown --delete-volume` removes them — that destroys every "
+            "downloaded model and cannot be undone."
+        )
+        return 0
+
+    for v in volumes:
+        print(f"deleting {v.get('id')} — models are gone")
+        client.delete_volume(str(v["id"]))
+    print("nothing is billing")
+    return 0
+
+
+handlers["teardown"] = cmd_teardown
 
 
 def _slug(text: str, limit: int = 40) -> str:

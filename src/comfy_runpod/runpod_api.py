@@ -109,7 +109,14 @@ class Client:
         out = self._call("GET", "/network-volumes")
         return list(out.get("networkVolumes") or out.get("volumes") or [])
 
+    def delete_volume(self, volume_id: str) -> None:
+        """Irreversible. Every model on the volume is lost."""
+        self._call("DELETE", f"/network-volumes/{volume_id}")
+
     # --- pods ------------------------------------------------------------
+
+    def list_pods(self) -> list[dict]:
+        return list(self._call("GET", "/pods").get("pods") or [])
 
     def create_pod(
         self,

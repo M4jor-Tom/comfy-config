@@ -25,13 +25,17 @@ class FakeCliClient:
     names as the real Client, no network."""
 
     def __init__(self, *, pod_id="pod-1", availability="HIGH",
-                 desired_status="RUNNING", spend=0.42):
+                 desired_status="RUNNING", spend=0.42,
+                 pods=None, volumes=None):
         self.pod_id = pod_id
         self.availability = availability
         self.desired_status = desired_status
         self.spend = spend
+        self.pods = pods if pods is not None else []
+        self.volumes = volumes if volumes is not None else []
         self.calls: list[str] = []
         self.terminated: list[str] = []
+        self.deleted_volumes: list[str] = []
         self.created_with: dict | None = None
 
     def pick_gpu(self, gpus, datacenter):
@@ -61,6 +65,18 @@ class FakeCliClient:
     def pod_spend(self, pod_id):
         self.calls.append("pod_spend")
         return self.spend
+
+    def list_pods(self):
+        self.calls.append("list_pods")
+        return self.pods
+
+    def list_volumes(self):
+        self.calls.append("list_volumes")
+        return self.volumes
+
+    def delete_volume(self, volume_id):
+        self.calls.append("delete_volume")
+        self.deleted_volumes.append(volume_id)
 
 
 class FakeTunnel:
@@ -510,6 +526,90 @@ def test_cmd_status_with_pod_reports_id_uptime_live_status_and_spend(
     assert "0.5" in out
     assert "get_pod" in client.calls
     assert "pod_spend" in client.calls
+
+
+# --- cmd_teardown --------------------------------------------------------
+
+
+def test_cmd_teardown_terminates_every_pod_unconditionally_and_clears_state(
+    monkeypatch, tmp_path, capsys
+):
+    monkeypatch.chdir(tmp_path)
+    write_state({"pod_id": "pod-1", "started": 1000, "gpu": "x"})
+    client = FakeCliClient(pods=[
+        {"id": "pod-1", "name": "comfy-up"},
+        {"id": "pod-2", "name": "comfy-run"},
+    ])
+    monkeypatch.setattr(cli, "_client", lambda: client)
+
+    rc = cli.cmd_teardown(argparse.Namespace(delete_volume=False))
+
+    assert rc == 0
+    assert client.terminated == ["pod-1", "pod-2"]
+    assert read_state() == {}  # cleared even though nothing else changed it
+    out = capsys.readouterr().out
+    assert "pod-1" in out and "comfy-up" in out
+    assert "pod-2" in out and "comfy-run" in out
+
+
+def test_cmd_teardown_with_nothing_running_says_so_plainly_and_exits_zero(
+    monkeypatch, tmp_path, capsys
+):
+    monkeypatch.chdir(tmp_path)
+    client = FakeCliClient(pods=[], volumes=[])
+    monkeypatch.setattr(cli, "_client", lambda: client)
+
+    rc = cli.cmd_teardown(argparse.Namespace(delete_volume=False))
+
+    assert rc == 0
+    out = capsys.readouterr().out.lower()
+    assert "no pods running" in out
+    assert "nothing is billing" in out
+    assert client.deleted_volumes == []
+
+
+def test_cmd_teardown_without_delete_volume_flag_reports_cost_and_never_deletes(
+    monkeypatch, tmp_path, capsys
+):
+    """The default, no-flag path must never touch delete_volume -- deleting
+    destroys every downloaded model irreversibly -- but must still surface
+    what staying idle costs, since that's the whole point of the command."""
+    monkeypatch.chdir(tmp_path)
+    client = FakeCliClient(pods=[], volumes=[
+        {"id": "vol-1", "name": "comfy-models", "size": 75, "dataCenter": "EU-RO-1"},
+    ])
+    monkeypatch.setattr(cli, "_client", lambda: client)
+
+    rc = cli.cmd_teardown(argparse.Namespace(delete_volume=False))
+
+    assert rc == 0
+    assert client.deleted_volumes == []
+    assert "delete_volume" not in client.calls
+    out = capsys.readouterr().out
+    assert "vol-1" in out
+    assert "5.25" in out  # 75 GB * $0.07/GB/month
+
+
+def test_cmd_teardown_with_delete_volume_flag_deletes_every_volume(
+    monkeypatch, tmp_path, capsys
+):
+    monkeypatch.chdir(tmp_path)
+    client = FakeCliClient(pods=[], volumes=[
+        {"id": "vol-1", "size": 75},
+        {"id": "vol-2", "size": 10},
+    ])
+    monkeypatch.setattr(cli, "_client", lambda: client)
+
+    rc = cli.cmd_teardown(argparse.Namespace(delete_volume=True))
+
+    assert rc == 0
+    assert client.deleted_volumes == ["vol-1", "vol-2"]
+    out = capsys.readouterr().out.lower()
+    assert "nothing is billing" in out  # unambiguous: everything just got removed
+
+
+def test_teardown_is_registered_in_the_dispatch_table():
+    assert cli.handlers["teardown"] is cli.cmd_teardown
 
 
 # --- main: centralised error handling (moved out of cmd_provision) ---------

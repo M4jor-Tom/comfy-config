@@ -204,6 +204,24 @@ def test_list_volumes_returns_empty_list_when_neither_key_present():
     assert Client("k", transport=t).list_volumes() == []
 
 
+def test_delete_volume_issues_delete_to_the_volume_path():
+    t = FakeTransport({})
+    Client("k", transport=t).delete_volume("vol_abc")
+    assert t.calls[-1] == ("DELETE", "/network-volumes/vol_abc", None)
+
+
+def test_list_pods_returns_the_pods_key():
+    t = FakeTransport({"/pods": {"pods": [{"id": "pod-1", "name": "comfy-up"}]}})
+    pods = Client("k", transport=t).list_pods()
+    assert pods == [{"id": "pod-1", "name": "comfy-up"}]
+    assert t.calls[-1] == ("GET", "/pods", None)
+
+
+def test_list_pods_returns_empty_list_when_no_pods_key():
+    t = FakeTransport({"/pods": {}})
+    assert Client("k", transport=t).list_pods() == []
+
+
 def test_terminate_uses_action_endpoint():
     t = FakeTransport({})
     Client("k", transport=t).terminate_pod("pod1")
