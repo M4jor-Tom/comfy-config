@@ -151,22 +151,22 @@ def load_run(path: Path) -> Run:
     )
 
 
-def state_path() -> Path:
-    return Path(".comfy-state.json")
+# Relative on purpose: it resolves against the working directory at each
+# operation, so a test that chdirs into a tmp dir gets its own state file.
+STATE_PATH = Path(".comfy-state.json")
 
 
 def read_state() -> dict:
-    p = state_path()
-    if not p.is_file():
+    if not STATE_PATH.is_file():
         return {}
     try:
-        return json.loads(p.read_text())
+        return json.loads(STATE_PATH.read_text())
     except json.JSONDecodeError:
         return {}
 
 
 def write_state(d: dict) -> None:
-    state_path().write_text(json.dumps(d, indent=2))
+    STATE_PATH.write_text(json.dumps(d, indent=2))
 
 
 def merge_state(**fields: object) -> None:
@@ -179,4 +179,4 @@ def merge_state(**fields: object) -> None:
 
 
 def clear_state() -> None:
-    state_path().unlink(missing_ok=True)
+    STATE_PATH.unlink(missing_ok=True)

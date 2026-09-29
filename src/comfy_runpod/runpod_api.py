@@ -63,7 +63,6 @@ class Client:
     ) -> None:
         if not api_key:
             raise RunpodError("RUNPOD_API_KEY is not set")
-        self._key = api_key
         self._transport = transport or (
             lambda m, p, b=None: _http(m, p, b, api_key)
         )

@@ -7,12 +7,16 @@ dollars — even a 9-hour worst case is about $0.63, once.
 
 from __future__ import annotations
 
+import subprocess
 from dataclasses import dataclass
 
 from .config import Infra
 from .runpod_api import Client, RunpodError
 
 MODELS_ROOT = "/workspace/runpod-slim/ComfyUI/models"
+
+# 48.7 GB of models plus the ComfyUI install ComfyUI copies onto /workspace.
+VOLUME_SIZE_GB = 75
 
 Z_IMAGE = "Comfy-Org/z_image"
 WAN22 = "Comfy-Org/Wan_2.2_ComfyUI_Repackaged"
@@ -105,7 +109,7 @@ def render_download_script() -> str:
     return "\n".join(lines) + "\n"
 
 
-def provision(client: Client, infra: Infra, volume_size_gb: int = 75) -> str:
+def provision(client: Client, infra: Infra) -> str:
     """Create the volume if absent, then fill it from a CPU pod. Returns volume id."""
     volume_id = infra.volume_id
     if volume_id:
@@ -135,9 +139,9 @@ def provision(client: Client, infra: Infra, volume_size_gb: int = 75) -> str:
             print(f"found existing volume {volume_id} named comfy-models — reusing it")
         else:
             volume_id = client.create_volume(
-                "comfy-models", volume_size_gb, infra.datacenter
+                "comfy-models", VOLUME_SIZE_GB, infra.datacenter
             )
-            print(f"created volume {volume_id} ({volume_size_gb} GB) — PUT THIS IN comfy.yaml")
+            print(f"created volume {volume_id} ({VOLUME_SIZE_GB} GB) — PUT THIS IN comfy.yaml")
 
     pod = client.create_pod(
         name="comfy-provision",
@@ -159,8 +163,6 @@ def provision(client: Client, infra: Infra, volume_size_gb: int = 75) -> str:
 
 
 def _run_download(host: str, port: int, user: str) -> None:
-    import subprocess
-
     script = render_download_script()
     cmd = [
         "ssh", "-p", str(port),
