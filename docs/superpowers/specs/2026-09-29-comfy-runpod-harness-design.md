@@ -1,7 +1,7 @@
 # ComfyUI-on-Runpod harness — design
 
 **Date:** 2026-09-29
-**Status:** awaiting review
+**Status:** approved 2026-09-29
 
 ## 1. Goal
 
@@ -24,20 +24,20 @@ Non-goal: a service, a web UI, multi-user anything, or a general ComfyUI wrapper
 
 ## 3. Storage: network volume
 
-**Standard network volume, 70 GB, EU-RO-1, $4.90/month.**
+**Standard network volume, 75 GB, EU-RO-1, $5.25/month.**
 
 Pricing verified at <https://docs.runpod.io/storage/network-volumes> §Pricing:
-first 1 TB at **$0.07/GB/month**. 70 × 0.07 = $4.90.
+first 1 TB at **$0.07/GB/month**. 75 × 0.07 = $5.25.
 
 The volume holds the ComfyUI install (the official template copies itself to
 `/workspace` on first boot) *plus* models *plus* output headroom — not models alone:
 
 | | GB |
 | --- | --- |
-| Models, all 5 modes (§6) | 42.6 |
+| Models, all 5 modes (§6) | 48.7 |
 | ComfyUI install + venv | ~20 |
 | Output headroom | ~5 |
-| **Provision** | **70** |
+| **Provision** | **75** |
 
 Size can be increased later, never decreased.
 
@@ -50,8 +50,8 @@ The spread is a **per-host lottery**, not a datacenter property: the same user, 
 files, got 15 MB/s and 120 MB/s on different days, and one person fixed 2 MB/s by
 destroying the pod and renting another.
 
-At the median, 42.6 GB is ~47 min of download per session. On a $0.72/hr GPU that is
-~$0.54 of rented hardware watching a progress bar — the volume pays for itself at
+At the median, 48.7 GB is ~54 min of download per session. On a $0.72/hr GPU that is
+~$0.65 of rented hardware watching a progress bar — the volume pays for itself at
 about five sessions a month, and on the *first* session if a bad host is drawn.
 Runpod's own figure for the alternative: 32 GB loaded from a volume in ~21 seconds
 (volumes are NVMe, 200–400 MB/s).
@@ -123,18 +123,18 @@ Two entries, one loop — this is not an abstraction, it is the fallback that ma
 live run. Phase 1 must boot it for real before we rely on it; the 4090 path is the
 fallback if it misbehaves.
 
-## 6. Model set — 42.6 GB, all five modes
+## 6. Model set — 48.7 GB, all five modes
 
 Two source repos, both `Comfy-Org/*` mirrors, so **no HuggingFace token is required**.
 All Apache-2.0. Every filename and size below was verified against the HuggingFace API
 on 2026-09-29; sizes are decimal GB as the API reports them.
 
-Repo **A** = `Comfy-Org/z_image_turbo`, repo **B** = `Comfy-Org/Wan_2.2_ComfyUI_Repackaged`.
+Repo **A** = `Comfy-Org/z_image`, repo **B** = `Comfy-Org/Wan_2.2_ComfyUI_Repackaged`.
 All paths are under `split_files/` in both repos.
 
 | Mode | Model | Repo | File → target dir | GB |
 | --- | --- | --- | --- | --- |
-| `t2i` | Z-Image-Turbo int8, 8-step | A | `diffusion_models/z_image_turbo_int8_convrot.safetensors` | 6.2 |
+| `t2i` | Z-Image bf16, non-distilled | A | `diffusion_models/z_image_bf16.safetensors` | 12.3 |
 | | | A | `text_encoders/qwen_3_4b.safetensors` | 8.0 |
 | | | A | `vae/ae.safetensors` | 0.3 |
 | `i2i` | *same weights as `t2i`* — classic denoise graph | — | — | **0** |
@@ -142,7 +142,20 @@ All paths are under `split_files/` in both repos.
 | `v2v` | Wan 2.2 Fun Control 5B | B | `diffusion_models/wan2.2_fun_control_5B_bf16.safetensors` | 10.0 |
 | shared | Wan text encoder | B | `text_encoders/umt5_xxl_fp8_e4m3fn_scaled.safetensors` | 6.7 |
 | shared | Wan 2.2 VAE | B | `vae/wan2.2_vae.safetensors` | 1.4 |
-| | | | **Total** | **42.6** |
+| | | | **Total** | **48.7** |
+
+Repo **A** is `Comfy-Org/z_image` — the **non-distilled** Z-Image, not `z_image_turbo`.
+This implements the quality-over-speed policy (§13.2): the Turbo variant is an 8-step
+distillation, and `int8_convrot` is a quantization, and both trade fidelity for
+throughput. Taking `z_image_bf16` drops both. It costs +6.1 GB (+$0.43/month) and no
+extra generation time — bf16 needs no dequantization step; it needs VRAM, and the
+32 GB primary GPU has it (12.3 GB weights + 8.0 GB text encoder leaves ample headroom
+at 1024×1024).
+
+Honest caveat: `z_image_turbo` has 8.1M downloads against 216K for the non-distilled
+repo, so the variant we are choosing has far less community validation. Download counts
+measure convenience rather than quality, and the free fallback is one filename away —
+`z_image_int8_convrot.safetensors` is the same 6.2 GB as Turbo.
 
 Note the Wan text encoder lives in the 2.2 repo, not the 2.1 one — every Wan file we
 need comes from repo B, which keeps `provision` to two repos.
@@ -282,14 +295,35 @@ Phase 1 is itself the integration test, and it must produce evidence, not assert
 Then per-mode runs through the CLI, and `/simplify` + `/ponytail-review` as CLAUDE.md
 requires.
 
-## 13. Open questions
+## 13. Decisions and remaining questions
 
-1. **GPU preference** — PRO 4500 32 GB at $0.72 primary, or 4090 24 GB at $0.74 for the
-   HIGH-stock safety? Spec assumes the former with the latter as fallback.
-2. **Quality vs speed** when they conflict — Z-Image-Turbo is 8-step and fast; a
-   non-distilled model is slower and better. Spec assumes speed.
-3. **`count` semantics for video** — 1–2 clips per run means `count` probably caps lower
-   for video modes. Spec assumes the same field, user sets it sensibly.
+**13.1 GPU — settled.** PRO 4500 Blackwell 32 GB at $0.72 primary, RTX 4090 24 GB at
+$0.74 as the HIGH-stock fallback. Config holds both in order (§5).
+
+**13.2 Quality over speed, at equal cost — settled (user, 2026-09-29).** The governing
+rule for every subsequent choice: *where quality costs no more money, take quality.*
+"No more money" is judged on the total monthly bill, not on generation seconds — GPU
+time at $0.72/hr is cheap enough that step count is a rounding error, while volume GB
+is a standing charge.
+
+Applied so far:
+
+| Choice | Ruling |
+| --- | --- |
+| `z_image_turbo` int8 → **`z_image` bf16** | taken. +$0.43/mo, no time cost |
+| Sampler steps in shipped workflows | set for quality, not the distilled minimum. 20 images at 8 s instead of 2 s is ~$0.03 of GPU |
+| Wan 2.2 TI2V 5B → 14B pairs | **not** taken. +57 GB is +$3.99/mo — an 80% rise in the standing bill, so it fails the equal-cost test. Stays the top documented upgrade (§6) |
+| `umt5_xxl_fp8` → `umt5_xxl_fp16` | open, see 13.4 |
+
+**13.3 `count` for video — assumed.** Same config field as images; the user sets it low
+for video modes. Revisit only if that proves annoying in practice.
+
+**13.4 Open: the Wan text encoder precision.** The spec carries
+`umt5_xxl_fp8_e4m3fn_scaled` (6.7 GB); `umt5_xxl_fp16` (11.4 GB) also exists in repo B.
+Under 13.2 the fp16 encoder is a candidate at +4.7 GB (+$0.33/mo), but text-encoder
+precision affects video output less visibly than the diffusion model's does, and it is
+untested here. Decide empirically in Phase 1 — generate the same prompt both ways
+before committing another $0.33/month.
 
 ## 14. Risks
 
@@ -299,4 +333,4 @@ requires.
 | Only 2 GPU/DC pairs above LOW stock — both in one datacenter | ordered GPU list; if both are out, `up` fails clearly rather than hanging |
 | Export (API) may not round-trip a subgraph-heavy template | fall back to a simpler official template, or author the graph by hand as with `i2i` |
 | WebSocket over SSH tunnel untested | poll `/history` as fallback; both are a few lines |
-| Volume silently billing while unused | it is $4.90/mo; `comfy status` surfaces it, low-balance notifications on |
+| Volume silently billing while unused | it is $5.25/mo; `comfy status` surfaces it, low-balance notifications on |
