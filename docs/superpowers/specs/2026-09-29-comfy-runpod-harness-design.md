@@ -214,7 +214,7 @@ volume_id: vol_xxxxxxxx
 gpus:                          # ordered; first with capacity wins
   - { id: "NVIDIA RTX PRO 4500 Blackwell", template: "2lv7ev3wfp" }
   - { id: "NVIDIA GeForce RTX 4090",       template: "cw3nka7d08" }
-terminate_after: 3h            # hard backstop set at creation
+terminate_after: 3h            # local watchdog only; v2 has no server-side TTL (§10)
 ```
 
 A run file is per-idea:
@@ -240,7 +240,7 @@ overrides:                     # optional
 | `comfy up` | create the GPU pod, open the SSH tunnel, wait for `/system_stats` |
 | `comfy run <file>` | resolve mode → workflow, apply params, queue `count` jobs, stream progress, download to `out/<date>-<slug>/` |
 | `comfy down` | terminate the pod, report what the session cost |
-| `comfy status` | is a pod up, how long, how much so far |
+| `comfy status` | is a pod up, how long, and real spend from `/v2/billing/pods` |
 
 `provision` deliberately uses a CPU pod: the volume attaches to one (`mounts.persistent`
 is invalid for CPU pods, network volumes are not), models download at datacenter speed,
@@ -266,13 +266,36 @@ Two things this buys beyond privacy: no 100-second Cloudflare timeout (we are of
 HTTP proxy entirely), so large video downloads work; and WebSockets work, so progress
 comes from ComfyUI's `ws://` stream instead of polling.
 
-**Cost guards, in order of trust:**
+### Cost guards — revised 2026-09-29 after reading the v2 schema
 
-1. `terminate_after` passed at pod creation — deletes the pod server-side even if the
-   laptop closes. Terminate, not stop: a stopped pod still bills volume disk at
-   $0.20/GB/month.
-2. `comfy down` terminates and prints the spend.
-3. `comfy status` so a forgotten pod is one command from visible.
+**There is no server-side auto-terminate in REST v2.** Every property of
+`CreatePodRequest` was enumerated from `api.runpod.io/v2/openapi.json`: `args`, `cmd`,
+`entrypoint`, `disk`, `env`, `image`, `ports`, `registry`, `cloud`, `cpu`,
+`dataCenterIds`, `globalNetworking`, `gpu`, `mounts`, `name`, `startJupyter`, `startSsh`,
+`templateId`. No TTL field. `PodAction` is exactly `start | stop | restart | terminate`.
+`runpodctl`'s `--terminate-after` is a v1/GraphQL feature and does not survive the
+2026-11-15 retirement.
+
+So the guard cannot be a server-side timer. It becomes a design property instead:
+
+1. **`comfy run` terminates the pod when the batch finishes** — default on, `--keep` to
+   opt out. This is the strongest guard available because the common path never leaves a
+   pod running at all. It inverts the risk: you must explicitly ask to keep paying.
+2. **A detached local watchdog** armed by `comfy up`, which terminates after
+   `terminate_after`. Second line only — it dies with the machine, and the spec must not
+   pretend otherwise.
+3. **`comfy status` reads real spend** from `GET /v2/billing/pods?podId=<id>`, which
+   exists in v2 — actual billed amount, not elapsed × rate.
+4. **Accepted residual risk:** a hard power loss between `up` and `down`, with `--keep`
+   set, leaves a pod billing until noticed. At $0.72/hr that is ~$17/day. Runpod's own
+   low-balance stop is the only true backstop; enable low-balance notifications.
+
+Rejected: putting a self-terminate timer on the pod, which would require the
+account-wide API key in the pod's environment.
+
+**Also confirmed:** `disk` in the request is *container* disk. Because we deploy by
+`templateId`, the template's own container-disk value applies — do not override it
+unless a boot failure says otherwise.
 
 ## 11. Flake
 
