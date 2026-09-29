@@ -4,3 +4,7 @@ out/
 __pycache__/
 result
 result-*
+.superpowers/
+.comfy-state.json
+.comfy-tunnel.log
+comfy.yaml

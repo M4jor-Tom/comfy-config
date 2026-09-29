@@ -1,0 +1,90 @@
+{
+  "1": {
+    "class_type": "UNETLoader",
+    "inputs": {
+      "unet_name": "z_image_bf16.safetensors",
+      "weight_dtype": "default"
+    },
+    "_meta": {"title": "UNET Loader"}
+  },
+  "2": {
+    "class_type": "CLIPLoader",
+    "inputs": {
+      "clip_name": "qwen_3_4b.safetensors",
+      "type": "qwen_image"
+    },
+    "_meta": {"title": "CLIP Loader"}
+  },
+  "3": {
+    "class_type": "VAELoader",
+    "inputs": {
+      "vae_name": "ae.safetensors"
+    },
+    "_meta": {"title": "VAE Loader"}
+  },
+  "4": {
+    "class_type": "LoadImage",
+    "inputs": {
+      "image": "task6_input.png"
+    },
+    "_meta": {"title": "input"}
+  },
+  "5": {
+    "class_type": "TextEncodeZImageOmni",
+    "inputs": {
+      "clip": ["2", 0],
+      "prompt": "the apple is now bright green, studio lighting, high detail, photorealistic",
+      "auto_resize_images": true
+    },
+    "_meta": {"title": "positive"}
+  },
+  "6": {
+    "class_type": "TextEncodeZImageOmni",
+    "inputs": {
+      "clip": ["2", 0],
+      "prompt": "blurry, low quality, distorted, watermark, text",
+      "auto_resize_images": true
+    },
+    "_meta": {"title": "negative"}
+  },
+  "7": {
+    "class_type": "VAEEncode",
+    "inputs": {
+      "pixels": ["4", 0],
+      "vae": ["3", 0]
+    },
+    "_meta": {"title": "VAE Encode"}
+  },
+  "8": {
+    "class_type": "KSampler",
+    "inputs": {
+      "model": ["1", 0],
+      "seed": 0,
+      "steps": 30,
+      "cfg": 4.0,
+      "sampler_name": "euler",
+      "scheduler": "simple",
+      "positive": ["5", 0],
+      "negative": ["6", 0],
+      "latent_image": ["7", 0],
+      "denoise": 0.75
+    },
+    "_meta": {"title": "sampler"}
+  },
+  "9": {
+    "class_type": "VAEDecode",
+    "inputs": {
+      "samples": ["8", 0],
+      "vae": ["3", 0]
+    },
+    "_meta": {"title": "VAE Decode"}
+  },
+  "10": {
+    "class_type": "SaveImage",
+    "inputs": {
+      "images": ["9", 0],
+      "filename_prefix": "i2i"
+    },
+    "_meta": {"title": "output"}
+  }
+}

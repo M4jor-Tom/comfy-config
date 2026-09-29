@@ -1,0 +1,6 @@
+mode: t2i
+prompt: "a red fox in a misty pine forest, cinematic, shallow depth of field"
+negative: "blurry, watermark, text"
+count: 3
+size: [1024, 1024]
+seed: random
