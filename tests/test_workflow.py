@@ -20,7 +20,9 @@ WORKFLOWS_DIR = Path(__file__).resolve().parent.parent / "workflows"
 def _run(**kw):
     """A Run with sane defaults; a test only passes what it varies. Mirrors
     T2's Run fields -- seed/input/overrides are left at their dataclass
-    defaults (None/None/{}) unless a test cares about them."""
+    defaults (None/None/{}) unless a test cares about them. Note: `run.seed`
+    itself is no longer read by apply_run (see Fix round 1) -- it only
+    matters to seeds_for tests below."""
     defaults = dict(mode="t2i", prompt="a fox in a misty forest", count=1, size=(512, 512))
     defaults.update(kw)
     return Run(**defaults)
@@ -97,19 +99,19 @@ def test_find_by_title_raises_on_duplicate_titles():
         find_by_title(wf, "positive")
 
 
-# --- apply_run: prompt / negative / seed / latent size ------------------
+# --- apply_run: prompt / negative / latent size --------------------------
 
 
 def test_apply_run_sets_positive_and_negative_text():
     wf = _full_workflow()
-    out = apply_run(wf, _run(prompt="new positive", negative="new negative"))
+    out = apply_run(wf, _run(prompt="new positive", negative="new negative"), seed=0)
     assert find_by_title(out, "positive")["inputs"]["text"] == "new positive"
     assert find_by_title(out, "negative")["inputs"]["text"] == "new negative"
 
 
 def test_apply_run_sets_latent_size_when_present():
     wf = _full_workflow()
-    out = apply_run(wf, _run(size=(768, 1024)))
+    out = apply_run(wf, _run(size=(768, 1024)), seed=0)
     node = find_by_title(out, "latent")
     assert (node["inputs"]["width"], node["inputs"]["height"]) == (768, 1024)
 
@@ -121,26 +123,14 @@ def test_apply_run_tolerates_missing_latent_node():
         "2": _node("TextEncodeZImageOmni", "negative", {"prompt": "n"}),
         "3": _node("KSampler", "sampler", {"seed": 0}),
     }
-    out = apply_run(wf, _run())  # must not raise
+    out = apply_run(wf, _run(), seed=0)  # must not raise
     assert find_by_title(out, "latent") is None
-
-
-def test_apply_run_sets_sampler_seed_when_given():
-    wf = _full_workflow()
-    out = apply_run(wf, _run(seed=12345))
-    assert find_by_title(out, "sampler")["inputs"]["seed"] == 12345
-
-
-def test_apply_run_leaves_seed_untouched_when_none():
-    wf = _full_workflow()
-    out = apply_run(wf, _run(seed=None))
-    assert find_by_title(out, "sampler")["inputs"]["seed"] == 0  # authored value, left alone
 
 
 def test_apply_run_does_not_mutate_the_input_workflow():
     wf = _full_workflow()
     original = copy.deepcopy(wf)
-    apply_run(wf, _run(prompt="different", seed=99, size=(999, 999)))
+    apply_run(wf, _run(prompt="different", size=(999, 999)), seed=99)
     assert wf == original
 
 
@@ -154,7 +144,36 @@ def test_apply_run_raises_when_a_required_title_is_missing(missing_title):
     del nodes[missing_title]
     wf = {str(i): node for i, node in enumerate(nodes.values(), start=1)}
     with pytest.raises(WorkflowError, match=f"no node titled '{missing_title}'"):
-        apply_run(wf, _run())
+        apply_run(wf, _run(), seed=0)
+
+
+# --- apply_run: seed (Fix round 1, Finding 1) -----------------------------
+#
+# apply_run's `seed` parameter is the caller's concretely-resolved seed for
+# ONE queued job (seeds_for(run) produces `run.count` of these). It is
+# always applied, unconditionally -- `run.seed` itself (possibly None, i.e.
+# "random") is never consulted inside apply_run. The bug this guards
+# against: a batch silently coming back as `count` identical images because
+# every job kept the seed already baked into the committed graph.
+
+
+def test_apply_run_different_seeds_yield_different_sampler_seeds():
+    wf = _full_workflow()
+    out_a = apply_run(wf, _run(), seed=1)
+    out_b = apply_run(wf, _run(), seed=2)
+    seed_a = find_by_title(out_a, "sampler")["inputs"]["seed"]
+    seed_b = find_by_title(out_b, "sampler")["inputs"]["seed"]
+    assert seed_a != seed_b
+    assert (seed_a, seed_b) == (1, 2)
+
+
+def test_apply_run_sets_seed_even_when_run_seed_is_random():
+    """run.seed is None ('random') must not stop apply_run from setting the
+    concrete `seed` parameter -- the caller has already resolved
+    random-vs-fixed via seeds_for() before calling apply_run."""
+    wf = _full_workflow()
+    out = apply_run(wf, _run(seed=None), seed=4242)
+    assert find_by_title(out, "sampler")["inputs"]["seed"] == 4242
 
 
 # --- apply_run: text field varies by node class (correction 1) ----------
@@ -164,7 +183,7 @@ def test_apply_run_zimageomni_positive_sets_prompt_not_text():
     """TextEncodeZImageOmni (t2i/i2i) keeps its text in `prompt`; patching
     it must not add a spurious `text` key."""
     wf = _full_workflow(positive=_node("TextEncodeZImageOmni", "positive", {"prompt": "old", "clip": ["2", 0]}))
-    out = apply_run(wf, _run(prompt="new prompt"))
+    out = apply_run(wf, _run(prompt="new prompt"), seed=0)
     node = find_by_title(out, "positive")
     assert node["inputs"]["prompt"] == "new prompt"
     assert "text" not in node["inputs"]
@@ -173,7 +192,7 @@ def test_apply_run_zimageomni_positive_sets_prompt_not_text():
 def test_apply_run_cliptextencode_positive_sets_text():
     """CLIPTextEncode (t2v/i2v/v2v) keeps its text in `text`."""
     wf = _full_workflow(positive=_node("CLIPTextEncode", "positive", {"text": "old", "clip": ["2", 0]}))
-    out = apply_run(wf, _run(prompt="new prompt"))
+    out = apply_run(wf, _run(prompt="new prompt"), seed=0)
     node = find_by_title(out, "positive")
     assert node["inputs"]["text"] == "new prompt"
     assert "prompt" not in node["inputs"]
@@ -185,7 +204,7 @@ def test_apply_run_raises_when_positive_has_neither_candidate_field():
     unset."""
     wf = {"1": _node("MysteryNode", "positive", {"unrelated_field": "value"})}
     with pytest.raises(WorkflowError, match="MysteryNode"):
-        apply_run(wf, _run())
+        apply_run(wf, _run(), seed=0)
 
 
 # --- apply_run: input file field varies by node class (correction 2) ----
@@ -193,21 +212,45 @@ def test_apply_run_raises_when_positive_has_neither_candidate_field():
 
 def test_apply_run_sets_loadimage_input_field():
     wf = _full_workflow(input=_node("LoadImage", "input", {"image": "placeholder.png"}))
-    out = apply_run(wf, _run(mode="i2i", input=Path("/local/dir/cat.png")))
-    assert find_by_title(out, "input")["inputs"]["image"] == "cat.png"
+    out = apply_run(
+        wf,
+        _run(mode="i2i", input=Path("/local/dir/cat.png")),
+        seed=0,
+        uploaded_name="uploaded_cat.png",
+    )
+    assert find_by_title(out, "input")["inputs"]["image"] == "uploaded_cat.png"
 
 
 def test_apply_run_sets_loadvideo_input_field():
     """LoadVideo's upload-target field is `file`, not `image`."""
     wf = _full_workflow(input=_node("LoadVideo", "input", {"file": "placeholder.mp4"}))
-    out = apply_run(wf, _run(mode="v2v", input=Path("/local/dir/clip.mp4")))
-    assert find_by_title(out, "input")["inputs"]["file"] == "clip.mp4"
+    out = apply_run(
+        wf,
+        _run(mode="v2v", input=Path("/local/dir/clip.mp4")),
+        seed=0,
+        uploaded_name="uploaded_clip.mp4",
+    )
+    assert find_by_title(out, "input")["inputs"]["file"] == "uploaded_clip.mp4"
+
+
+def test_apply_run_patches_uploaded_name_not_local_filename():
+    """Fix round 1, Finding 2: ComfyUI's upload endpoint can rename the
+    file (e.g. dedup), so the graph must reference the server's name, not
+    the local one -- proven here with the two deliberately different."""
+    wf = _full_workflow(input=_node("LoadImage", "input", {"image": "placeholder.png"}))
+    out = apply_run(
+        wf,
+        _run(mode="i2i", input=Path("/local/dir/local_name.png")),
+        seed=0,
+        uploaded_name="server_assigned_name.png",
+    )
+    assert find_by_title(out, "input")["inputs"]["image"] == "server_assigned_name.png"
 
 
 def test_apply_run_raises_when_input_given_but_no_input_node():
     wf = _full_workflow()  # t2i-shaped: no 'input' node
     with pytest.raises(WorkflowError, match="no node titled 'input'"):
-        apply_run(wf, _run(input=Path("/local/dir/cat.png")))
+        apply_run(wf, _run(input=Path("/local/dir/cat.png")), seed=0)
 
 
 # --- apply_overrides ------------------------------------------------------
@@ -279,17 +322,21 @@ def test_real_committed_workflow_parses_and_applies(mode):
         count=1,
         size=(512, 512),
     )
+    uploaded_name = None
     if mode in ("i2i", "i2v"):
-        run_kwargs["input"] = Path("uploaded.png")
+        run_kwargs["input"] = Path("local_upload_source.png")
+        uploaded_name = "server_stored_name.png"
     elif mode == "v2v":
-        run_kwargs["input"] = Path("uploaded.mp4")
+        run_kwargs["input"] = Path("local_upload_source.mp4")
+        uploaded_name = "server_stored_name.mp4"
     run = Run(**run_kwargs)
 
-    out = apply_run(wf, run)
+    out = apply_run(wf, run, seed=13579, uploaded_name=uploaded_name)
 
     positive_out = find_by_title(out, "positive")
     field = "text" if "text" in positive_out["inputs"] else "prompt"
     assert positive_out["inputs"][field] == run.prompt
+    assert find_by_title(out, "sampler")["inputs"]["seed"] == 13579
 
     # the loaded graph itself must be untouched
     positive_original = find_by_title(wf, "positive")

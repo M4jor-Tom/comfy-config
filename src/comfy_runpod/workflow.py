@@ -90,7 +90,7 @@ def _set_candidate(node: dict, candidates: tuple[str, ...], value: object) -> No
     )
 
 
-def apply_run(workflow: dict, run: Run) -> dict:
+def apply_run(workflow: dict, run: Run, seed: int, uploaded_name: str | None = None) -> dict:
     """A patched copy of `workflow` with `run`'s parameters applied.
 
     Never mutates `workflow`. `positive`/`negative`/`sampler` are required;
@@ -99,6 +99,19 @@ def apply_run(workflow: dict, run: Run) -> dict:
     non-`latent`-titled node); `input` is patched only when `run.input` is
     given, and its absence from the graph then is an error rather than a
     silently ignored file.
+
+    `seed` is always applied, unconditionally. The caller resolves
+    random-vs-fixed via `seeds_for(run)` and queues one job per concrete
+    seed, so `run.seed` itself (which may be None, meaning "random") is
+    never consulted here -- skipping the set whenever it was None made
+    every job in a batch silently keep whatever seed was baked into the
+    committed graph, so a 16-image batch came back as 16 identical images.
+
+    `uploaded_name` is the filename ComfyUI's own upload endpoint reports
+    back -- which can differ from `run.input`'s local filename (e.g. on
+    dedup) -- and is what gets patched into the input node. Patching
+    `run.input.name` instead points the graph at a file the server may
+    never have stored under that name.
     """
     out = copy.deepcopy(workflow)
 
@@ -109,8 +122,7 @@ def apply_run(workflow: dict, run: Run) -> dict:
     _set_candidate(negative, _TEXT_FIELD_CANDIDATES, run.negative)
 
     sampler = _require(out, "sampler")
-    if run.seed is not None:
-        sampler["inputs"]["seed"] = run.seed
+    sampler["inputs"]["seed"] = seed
 
     latent = find_by_title(out, "latent")
     if latent is not None:
@@ -123,7 +135,7 @@ def apply_run(workflow: dict, run: Run) -> dict:
                 f"run supplies an input file ({run.input.name!r}) but the "
                 "workflow has no node titled 'input'"
             )
-        _set_candidate(input_node, _INPUT_FIELD_CANDIDATES, run.input.name)
+        _set_candidate(input_node, _INPUT_FIELD_CANDIDATES, uploaded_name)
 
     return out
 
