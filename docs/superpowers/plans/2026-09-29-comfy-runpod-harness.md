@@ -13,7 +13,7 @@
 ## Global Constraints
 
 - **Datacenter: `EU-RO-1`.** The only one pairing standard network volumes with better-than-LOW GPU stock.
-- **GPU order:** `NVIDIA RTX PRO 4500 Blackwell` (template `2lv7ev3wfp`, CUDA 13) then `NVIDIA GeForce RTX 4090` (template `cw3nka7d08`, CUDA 12.8). Template is tied to the GPU's CUDA line — never mix them.
+- **GPU order:** `NVIDIA RTX PRO 4500 Blackwell` (template `wgd3p4n4o6`, CUDA 13) then `NVIDIA GeForce RTX 4090` (template `cw3nka7d08`, CUDA 12.8). Template is tied to the GPU's CUDA line — never mix them.
 - **Volume:** 75 GB, standard tier, `EU-RO-1`, mounted at `/workspace`. Increase-only.
 - **Ports: `["22/tcp"]` only.** Port 8188 is never exposed. Ports cannot be added to a running pod.
 - **Control plane: `https://api.runpod.io/v2` exclusively.** Never `rest.runpod.io/v1` (retires 2026-11-15) and never GraphQL. Do not add `runpodctl` or the `runpod` PyPI SDK — both ride the dying APIs.
@@ -212,7 +212,7 @@ INFRA = """
 datacenter: EU-RO-1
 volume_id: vol_abc123
 gpus:
-  - { id: "NVIDIA RTX PRO 4500 Blackwell", template: "2lv7ev3wfp" }
+  - { id: "NVIDIA RTX PRO 4500 Blackwell", template: "wgd3p4n4o6" }
   - { id: "NVIDIA GeForce RTX 4090",       template: "cw3nka7d08" }
 terminate_after: 3h
 """
@@ -228,7 +228,7 @@ def test_load_infra_parses_gpu_order(tmp_path):
         "NVIDIA RTX PRO 4500 Blackwell",
         "NVIDIA GeForce RTX 4090",
     ]
-    assert infra.gpus[0].template == "2lv7ev3wfp"
+    assert infra.gpus[0].template == "wgd3p4n4o6"
     assert infra.terminate_after_seconds == 10800
 
 
@@ -533,7 +533,7 @@ volume_id:
 # Ordered: the first GPU with capacity wins. The template MUST match the
 # GPU's CUDA line — Blackwell needs CUDA 13, Ada needs CUDA 12.8.
 gpus:
-  - { id: "NVIDIA RTX PRO 4500 Blackwell", template: "2lv7ev3wfp" }  # 32 GB, $0.72/hr
+  - { id: "NVIDIA RTX PRO 4500 Blackwell", template: "wgd3p4n4o6" }  # 32 GB, $0.72/hr
   - { id: "NVIDIA GeForce RTX 4090",       template: "cw3nka7d08" }  # 24 GB, $0.74/hr
 
 # Local watchdog only. Runpod REST v2 has no server-side pod TTL, so this
@@ -587,7 +587,7 @@ import pytest
 from comfy_runpod.config import GpuChoice
 from comfy_runpod.runpod_api import Client, RunpodError
 
-BLACKWELL = GpuChoice(id="NVIDIA RTX PRO 4500 Blackwell", template="2lv7ev3wfp")
+BLACKWELL = GpuChoice(id="NVIDIA RTX PRO 4500 Blackwell", template="wgd3p4n4o6")
 ADA = GpuChoice(id="NVIDIA GeForce RTX 4090", template="cw3nka7d08")
 
 CATALOG = {
@@ -667,7 +667,7 @@ def test_create_pod_body_shape_for_gpu():
     t = FakeTransport({"/pods": {"id": "pod1"}})
     Client("k", transport=t).create_pod(
         name="comfy",
-        template_id="2lv7ev3wfp",
+        template_id="wgd3p4n4o6",
         datacenter="EU-RO-1",
         volume_id="vol_abc",
         gpu_id=BLACKWELL.id,
@@ -675,7 +675,7 @@ def test_create_pod_body_shape_for_gpu():
     method, path, body = t.calls[-1]
     assert (method, path) == ("POST", "/pods")
     assert body["gpu"] == {"id": BLACKWELL.id, "count": 1}
-    assert body["templateId"] == "2lv7ev3wfp"
+    assert body["templateId"] == "wgd3p4n4o6"
     assert body["cloud"] == "SECURE"
     assert body["dataCenterIds"] == ["EU-RO-1"]
     assert body["ports"] == ["22/tcp"]          # 8188 must never be exposed
@@ -723,7 +723,7 @@ def test_create_pod_omits_mounts_when_no_volume():
     """The harness must still work for a user who keeps no standing volume."""
     t = FakeTransport({"/pods": {"id": "pod1"}})
     Client("k", transport=t).create_pod(
-        name="comfy", template_id="2lv7ev3wfp", datacenter="EU-RO-1",
+        name="comfy", template_id="wgd3p4n4o6", datacenter="EU-RO-1",
         volume_id=None, gpu_id=BLACKWELL.id,
     )
     _, _, body = t.calls[-1]
@@ -810,7 +810,7 @@ VOLUME_MOUNT_PATH = "/workspace"
 
 # Minimal Ubuntu image for the provisioning CPU pod. It only needs curl and sshd,
 # both of which Runpod's base image provides.
-CPU_POD_IMAGE = "runpod/base:0.6.2-cpu"
+CPU_POD_IMAGE = "runpod/base:1.0.2-ubuntu2404"
 
 
 class RunpodError(Exception):
@@ -1500,7 +1500,7 @@ nix develop -c comfy up
 Expected output must include the chosen GPU, the pod id, `http://127.0.0.1:8188`, and
 ComfyUI's version and torch build from `/system_stats`.
 
-**This is the first live test of CUDA 13 template `2lv7ev3wfp`.** Record in the
+**This is the first live test of CUDA 13 template `wgd3p4n4o6`.** Record in the
 completion notes: which GPU was allocated, ComfyUI version, torch version, time to
 ready. If the Blackwell path fails, note exactly how, then re-run — `pick_gpu` should
 fall through to the 4090, and if it does not, that is a bug to fix here.

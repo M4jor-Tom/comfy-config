@@ -106,7 +106,7 @@ volume-capable datacenters, **65 are LOW**, and the two that are not are both he
 
 | VRAM | GPU | Secure $/hr | Stock | ComfyUI template |
 | --- | --- | --- | --- | --- |
-| 32 GB | **RTX PRO 4500 Blackwell** | **$0.72** | MEDIUM | CUDA 13 — `2lv7ev3wfp` |
+| 32 GB | **RTX PRO 4500 Blackwell** | **$0.72** | MEDIUM | CUDA 13 — `wgd3p4n4o6` |
 | 24 GB | RTX 4090 | $0.74 | HIGH | CUDA 12.8 — `cw3nka7d08` |
 
 Primary is the **PRO 4500 Blackwell**: cheaper than the 4090 and 8 GB more VRAM, which is
@@ -212,7 +212,7 @@ Two files. `comfy.yaml` is infrastructure and changes almost never:
 datacenter: EU-RO-1
 volume_id: vol_xxxxxxxx
 gpus:                          # ordered; first with capacity wins
-  - { id: "NVIDIA RTX PRO 4500 Blackwell", template: "2lv7ev3wfp" }
+  - { id: "NVIDIA RTX PRO 4500 Blackwell", template: "wgd3p4n4o6" }
   - { id: "NVIDIA GeForce RTX 4090",       template: "cw3nka7d08" }
 terminate_after: 3h            # local watchdog only; v2 has no server-side TTL (§10)
 ```
