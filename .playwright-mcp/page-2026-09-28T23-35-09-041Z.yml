@@ -1,0 +1,9 @@
+- generic [ref=e2]:
+  - main [ref=e3]:
+    - paragraph [ref=e17]: We're verifying your browser
+    - paragraph
+  - contentinfo [ref=e18]:
+    - generic [ref=e19]:
+      - paragraph [ref=e20]: Vercel Security Checkpoint
+      - paragraph [ref=e21]: "|"
+      - paragraph [ref=e22]: gru1::1790638508-3zG9EvYGooRxwHjJc7W5f7bAXE2HmNvY

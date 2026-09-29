@@ -1,0 +1,556 @@
+- generic [active] [ref=e1]:
+  - generic [ref=e2]:
+    - banner [ref=e3]:
+      - link [ref=e4] [cursor=pointer]:
+        - /url: /blog/runpod-iso-27001-certified
+        - paragraph [ref=e7]: We're ISO 27001 certified! Learn more
+      - link "Skip to main content" [ref=e11] [cursor=pointer]:
+        - /url: "#main"
+      - banner [ref=e12]:
+        - generic [ref=e13]:
+          - link "home" [ref=e14] [cursor=pointer]:
+            - /url: /
+          - button "menu" [ref=e23] [cursor=pointer]
+      - text: Loading form…
+    - main [ref=e28]:
+      - generic [ref=e29]:
+        - generic [ref=e32]:
+          - heading "GPU Benchmarks Directory" [level=1] [ref=e33]
+          - paragraph [ref=e34]: "Runpod's GPU comparison tool benchmarks more than 20 GPUs on the metrics that decide an inference deployment: VRAM, tokens per second per user, time to first token, and cost per unit of output. Every figure is a measured run across 33 models spanning LLM, image, video, and speech workloads, not a spec-sheet estimate. Whether you are serving a 7B model on a 24 GB card or a 35B model on Blackwell, start with what fits, then compare what it costs to run."
+        - generic:
+          - generic:
+            - img "Purple glow background"
+      - generic [ref=e37]:
+        - generic [ref=e38]:
+          - heading "GPU Comparison Tool" [level=2] [ref=e39]
+          - paragraph [ref=e40]: Real benchmark results, not spec sheets. Pick a model and compare GPUs on speed, latency and cost per output — across LLM, image, video and speech workloads.
+        - generic [ref=e42]:
+          - form "Form" [ref=e44]:
+            - combobox [ref=e46]:
+              - option "LLM (text generation)" [selected]
+              - option "Image generation"
+              - option "Video generation"
+              - option "Speech to text"
+            - combobox [ref=e48]:
+              - option "Chat (15 models)" [selected]
+              - option "Long generation (13 models)"
+              - option "RAG (long document in, short answer out) (13 models)"
+              - option "Chat (real conversation lengths) (9 models)"
+              - option "Agentic / tool calling (8 models)"
+              - option "Vision Q&A (7 models)"
+              - option "Chat with cached prefix (3 models)"
+            - combobox [ref=e50]:
+              - option "Target Model" [selected]
+              - option "Gemma 4 26B-A4B IT (5 GPUs)"
+              - option "Gemma 4 31B IT (6 GPUs)"
+              - option "Llama-3.1-8B-Instruct (11 GPUs)"
+              - option "Qwen2.5-7B-Instruct (21 GPUs)"
+              - option "Qwen2.5-14B-Instruct (FP8) (16 GPUs)"
+              - option "Qwen2.5-VL-7B-Instruct (7 GPUs)"
+              - option "Qwen3-8B (9 GPUs)"
+              - option "Qwen3-VL-8B-Instruct (12 GPUs)"
+              - option "Qwen3.5-9B (13 GPUs)"
+              - option "Qwen3.5-9B (FP8) (15 GPUs)"
+              - option "Qwen3.6-27B (6 GPUs)"
+              - option "Qwen3.6-27B (FP8) (15 GPUs)"
+              - option "Qwen3.6-35B-A3B (FP8) (9 GPUs)"
+              - option "Qwen3.8-27B (9 GPUs)"
+              - option "Qwen3.8-27B (FP8) (11 GPUs)"
+            - combobox [ref=e51]:
+              - option "Per Hour" [selected]
+              - option "Per Second"
+          - generic [ref=e53]:
+            - generic [ref=e55]:
+              - generic [ref=e56]: GPU
+              - generic [ref=e58]: VRAM
+              - generic [ref=e60]: Tokens/sec per user
+              - generic [ref=e62]: Time to first token
+              - generic [ref=e64]: $ / 1M output tokens
+              - generic [ref=e66]: Price (Secure/Hr)
+              - generic [ref=e68]: Availability
+            - list [ref=e71]:
+              - listitem [ref=e72]:
+                - generic [ref=e73]: B300
+                - generic [ref=e75]: 288 GB
+                - generic "Choose a model." [ref=e78]: —
+                - generic [ref=e79]: —
+                - generic [ref=e81]: —
+                - generic [ref=e83]: $7.89/hr
+                - link "Check availability" [ref=e87] [cursor=pointer]:
+                  - /url: /gpu-models/b300
+              - listitem [ref=e89]:
+                - generic [ref=e90]: H200
+                - generic [ref=e92]: 141 GB
+                - generic "Choose a model." [ref=e95]: —
+                - generic [ref=e96]: —
+                - generic [ref=e98]: —
+                - generic [ref=e100]: $4.59/hr
+                - link "Check availability" [ref=e104] [cursor=pointer]:
+                  - /url: /gpu-models/h200
+              - listitem [ref=e106]:
+                - generic [ref=e107]: B200
+                - generic [ref=e109]: 180 GB
+                - generic "Choose a model." [ref=e112]: —
+                - generic [ref=e113]: —
+                - generic [ref=e115]: —
+                - generic [ref=e117]: $6.79/hr
+                - link "Check availability" [ref=e121] [cursor=pointer]:
+                  - /url: /gpu-models/b200
+              - listitem [ref=e123]:
+                - generic [ref=e124]: H100 NVL
+                - generic [ref=e126]: 94 GB
+                - generic "Choose a model." [ref=e129]: —
+                - generic [ref=e130]: —
+                - generic [ref=e132]: —
+                - generic [ref=e134]: $3.19/hr
+                - link "Check availability" [ref=e138] [cursor=pointer]:
+                  - /url: /gpu-models/h100-nvl
+              - listitem [ref=e140]:
+                - generic [ref=e141]: H100 PCIe
+                - generic [ref=e143]: 80 GB
+                - generic "Choose a model." [ref=e146]: —
+                - generic [ref=e147]: —
+                - generic [ref=e149]: —
+                - generic [ref=e151]: $2.89/hr
+                - link "Check availability" [ref=e155] [cursor=pointer]:
+                  - /url: /gpu-models/h100-pcie
+              - listitem [ref=e157]:
+                - generic [ref=e158]: H100 SXM
+                - generic [ref=e160]: 80 GB
+                - generic "Choose a model." [ref=e163]: —
+                - generic [ref=e164]: —
+                - generic [ref=e166]: —
+                - generic [ref=e168]: $3.49/hr
+                - link "Check availability" [ref=e172] [cursor=pointer]:
+                  - /url: /gpu-models/h100-sxm
+              - listitem [ref=e174]:
+                - generic [ref=e175]: A100 PCIe
+                - generic [ref=e177]: 80 GB
+                - generic "Choose a model." [ref=e180]: —
+                - generic [ref=e181]: —
+                - generic [ref=e183]: —
+                - generic [ref=e185]: $1.59/hr
+                - link "Check availability" [ref=e189] [cursor=pointer]:
+                  - /url: /gpu-models/a100-pcie
+              - listitem [ref=e191]:
+                - generic [ref=e192]: A100 SXM
+                - generic [ref=e194]: 80 GB
+                - generic "Choose a model." [ref=e197]: —
+                - generic [ref=e198]: —
+                - generic [ref=e200]: —
+                - generic [ref=e202]: $1.59/hr
+                - link "Check availability" [ref=e206] [cursor=pointer]:
+                  - /url: /gpu-models/a100-sxm
+              - listitem [ref=e208]:
+                - generic [ref=e209]: Pro 6000 MIG 48GB
+                - generic [ref=e211]: 48 GB
+                - generic "Choose a model." [ref=e214]: —
+                - generic [ref=e215]: —
+                - generic [ref=e217]: —
+                - generic [ref=e219]: $1.09/hr
+                - link "Check availability" [ref=e223] [cursor=pointer]:
+                  - /url: /gpu-models/pro-6000-mig-48gb
+              - listitem [ref=e225]:
+                - generic [ref=e226]: L40S
+                - generic [ref=e228]: 48 GB
+                - generic "Choose a model." [ref=e231]: —
+                - generic [ref=e232]: —
+                - generic [ref=e234]: —
+                - generic [ref=e236]: $1.09/hr
+                - link "Check availability" [ref=e240] [cursor=pointer]:
+                  - /url: /gpu-models/l40s
+              - listitem [ref=e242]:
+                - generic [ref=e243]: RTX 6000 Ada
+                - generic [ref=e245]: 48 GB
+                - generic "Choose a model." [ref=e248]: —
+                - generic [ref=e249]: —
+                - generic [ref=e251]: —
+                - generic [ref=e253]: $0.84/hr
+                - link "Check availability" [ref=e257] [cursor=pointer]:
+                  - /url: /gpu-models/rtx-6000-ada
+              - listitem [ref=e259]:
+                - generic [ref=e260]: A40
+                - generic [ref=e262]: 48 GB
+                - generic "Choose a model." [ref=e265]: —
+                - generic [ref=e266]: —
+                - generic [ref=e268]: —
+                - generic [ref=e270]: $0.49/hr
+                - link "Check availability" [ref=e274] [cursor=pointer]:
+                  - /url: /gpu-models/a40
+              - listitem [ref=e276]:
+                - generic [ref=e277]: L40
+                - generic [ref=e279]: 48 GB
+                - generic "Choose a model." [ref=e282]: —
+                - generic [ref=e283]: —
+                - generic [ref=e285]: —
+                - generic [ref=e287]: $0.82/hr
+                - link "Check availability" [ref=e291] [cursor=pointer]:
+                  - /url: /gpu-models/l40
+              - listitem [ref=e293]:
+                - generic [ref=e294]: RTX A6000
+                - generic [ref=e296]: 48 GB
+                - generic "Choose a model." [ref=e299]: —
+                - generic [ref=e300]: —
+                - generic [ref=e302]: —
+                - generic [ref=e304]: $0.53/hr
+                - link "Check availability" [ref=e308] [cursor=pointer]:
+                  - /url: /gpu-models/rtx-a6000
+              - listitem [ref=e310]:
+                - generic [ref=e311]: RTX 5090
+                - generic [ref=e313]: 32 GB
+                - generic "Choose a model." [ref=e316]: —
+                - generic [ref=e317]: —
+                - generic [ref=e319]: —
+                - generic [ref=e321]: $0.99/hr
+                - link "Check availability" [ref=e325] [cursor=pointer]:
+                  - /url: /gpu-models/rtx-5090
+              - listitem [ref=e327]:
+                - generic [ref=e328]: Pro 6000 MIG 24GB
+                - generic [ref=e330]: 24 GB
+                - generic "Choose a model." [ref=e333]: —
+                - generic [ref=e334]: —
+                - generic [ref=e336]: —
+                - generic [ref=e338]: $0.59/hr
+                - link "Check availability" [ref=e342] [cursor=pointer]:
+                  - /url: /gpu-models/pro-6000-mig-24gb
+              - listitem [ref=e344]:
+                - generic [ref=e345]: L4
+                - generic [ref=e347]: 24 GB
+                - generic "Choose a model." [ref=e350]: —
+                - generic [ref=e351]: —
+                - generic [ref=e353]: —
+                - generic [ref=e355]: $0.49/hr
+                - link "Check availability" [ref=e359] [cursor=pointer]:
+                  - /url: /gpu-models/l4
+              - listitem [ref=e361]:
+                - generic [ref=e362]: RTX 3090
+                - generic [ref=e364]: 24 GB
+                - generic "Choose a model." [ref=e367]: —
+                - generic [ref=e368]: —
+                - generic [ref=e370]: —
+                - generic [ref=e372]: $0.50/hr
+                - link "Check availability" [ref=e376] [cursor=pointer]:
+                  - /url: /gpu-models/rtx-3090
+              - listitem [ref=e378]:
+                - generic [ref=e379]: RTX 4090
+                - generic [ref=e381]: 24 GB
+                - generic "Choose a model." [ref=e384]: —
+                - generic [ref=e385]: —
+                - generic [ref=e387]: —
+                - generic [ref=e389]: $0.74/hr
+                - link "Check availability" [ref=e393] [cursor=pointer]:
+                  - /url: /gpu-models/rtx-4090
+              - listitem [ref=e395]:
+                - generic [ref=e396]: RTX A5000
+                - generic [ref=e398]: 24 GB
+                - generic "Choose a model." [ref=e401]: —
+                - generic [ref=e402]: —
+                - generic [ref=e404]: —
+                - generic [ref=e406]: $0.27/hr
+                - link "Check availability" [ref=e410] [cursor=pointer]:
+                  - /url: /gpu-models/rtx-a5000
+              - listitem [ref=e412]:
+                - generic [ref=e413]: RTX A4000
+                - generic [ref=e415]: 16 GB
+                - generic "Choose a model." [ref=e418]: —
+                - generic [ref=e419]: —
+                - generic [ref=e421]: —
+                - generic [ref=e423]: $0.25/hr
+                - link "Check availability" [ref=e427] [cursor=pointer]:
+                  - /url: /gpu-models/rtx-a4000
+              - listitem [ref=e429]:
+                - generic [ref=e430]: RTX 2000 Ada
+                - generic [ref=e432]: 16 GB
+                - generic "Choose a model." [ref=e435]: —
+                - generic [ref=e436]: —
+                - generic [ref=e438]: —
+                - generic [ref=e440]: $0.24/hr
+                - link "Check availability" [ref=e444] [cursor=pointer]:
+                  - /url: /gpu-models/rtx-2000-ada
+              - listitem [ref=e446]:
+                - generic [ref=e447]: MI300X
+                - generic [ref=e449]: 192 GB
+                - generic "Choose a model." [ref=e452]: —
+                - generic [ref=e453]: —
+                - generic [ref=e455]: —
+                - generic [ref=e457]: $2.39/hr
+                - link "Check availability" [ref=e461] [cursor=pointer]:
+                  - /url: /gpu-models/mi300x
+      - generic [ref=e465]:
+        - generic [ref=e466]:
+          - heading "Benchmarks by Workload" [level=2] [ref=e467]
+          - paragraph [ref=e468]: The tool above compares cards interactively. These four guides publish the full measured results for each workload, including the figures that change the answer.
+        - generic [ref=e473]:
+          - 'link "LLM inference Best GPU for LLM inference: what the benchmarks show Per-user decode speed spreads 16x across 21 GPUs, from 17 tokens per second on an L4 to 272 on a B200, while cost spreads 27x, from $0.64 to $17.40 per million output tokens. Aggregate throughput, the figure most comparisons lead with, spreads 1.23x. 21 GPUs · 15 models · vLLM" [ref=e474] [cursor=pointer]':
+            - /url: /articles/guides/best-gpu-for-llm-inference
+            - generic [ref=e475]: LLM inference
+            - 'heading "Best GPU for LLM inference: what the benchmarks show" [level=3] [ref=e476]'
+            - paragraph [ref=e477]: Per-user decode speed spreads 16x across 21 GPUs, from 17 tokens per second on an L4 to 272 on a B200, while cost spreads 27x, from $0.64 to $17.40 per million output tokens. Aggregate throughput, the figure most comparisons lead with, spreads 1.23x.
+            - paragraph [ref=e478]: 21 GPUs · 15 models · vLLM
+          - 'link "Image generation Best GPU for ComfyUI: what the benchmarks show An RTX 5090 generated SDXL images faster than an H100 SXM at roughly a third of the hourly rate. SDXL workflows peaked at 6.7 to 7.4 GB of VRAM on every card from 16 GB to 288 GB, so most of the memory people rent for it goes unused. 16 GPUs · SDXL, FLUX.2, Qwen-Image · single user and shared load" [ref=e479] [cursor=pointer]':
+            - /url: /articles/guides/best-gpu-for-comfyui
+            - generic [ref=e480]: Image generation
+            - 'heading "Best GPU for ComfyUI: what the benchmarks show" [level=3] [ref=e481]'
+            - paragraph [ref=e482]: An RTX 5090 generated SDXL images faster than an H100 SXM at roughly a third of the hourly rate. SDXL workflows peaked at 6.7 to 7.4 GB of VRAM on every card from 16 GB to 288 GB, so most of the memory people rent for it goes unused.
+            - paragraph [ref=e483]: 16 GPUs · SDXL, FLUX.2, Qwen-Image · single user and shared load
+          - 'link "Speech to text Best GPU for Whisper: what the benchmarks show Transcription speed varies about 2.2x across 23 GPUs while cost per hour of audio varies 24x, from $0.0071 to $0.1697. Whisper peaks between 1.1 and 4.4 GB of VRAM, which is well under the figures commonly published for it. 23 GPUs · four Whisper variants · faster-whisper" [ref=e484] [cursor=pointer]':
+            - /url: /articles/guides/best-gpu-for-whisper
+            - generic [ref=e485]: Speech to text
+            - 'heading "Best GPU for Whisper: what the benchmarks show" [level=3] [ref=e486]'
+            - paragraph [ref=e487]: Transcription speed varies about 2.2x across 23 GPUs while cost per hour of audio varies 24x, from $0.0071 to $0.1697. Whisper peaks between 1.1 and 4.4 GB of VRAM, which is well under the figures commonly published for it.
+            - paragraph [ref=e488]: 23 GPUs · four Whisper variants · faster-whisper
+          - 'link "Video generation Best GPU for AI video: what the benchmarks show Coming Soon 23 GPUs · Wan 2.2 and LTX-2.3 · ComfyUI" [ref=e489] [cursor=pointer]':
+            - /url: /articles/guides/best-gpu-for-ai-video
+            - generic [ref=e490]: Video generation
+            - 'heading "Best GPU for AI video: what the benchmarks show" [level=3] [ref=e491]'
+            - paragraph [ref=e492]: Coming Soon
+            - paragraph [ref=e493]: 23 GPUs · Wan 2.2 and LTX-2.3 · ComfyUI
+  - generic [ref=e496]:
+    - generic [ref=e497]:
+      - heading "GPU Comparison Directory" [level=2] [ref=e498]
+      - paragraph [ref=e499]: Side-by-side specs and benchmarks for every GPU Runpod offers.
+    - list [ref=e502]:
+      - listitem [ref=e503]:
+        - button [expanded] [ref=e504] [cursor=pointer]:
+          - heading "Blackwell Architecture (NVIDIA B-Series)" [level=3] [ref=e505]
+        - generic "Blackwell Architecture (NVIDIA B-Series)" [ref=e510]:
+          - list [ref=e513]:
+            - listitem [ref=e514]:
+              - link "B200 vs RTX A6000" [ref=e515] [cursor=pointer]:
+                - /url: /gpu-compare/b200-vs-rtx-a6000
+            - listitem [ref=e516]:
+              - link "B200 vs RTX A5000" [ref=e517] [cursor=pointer]:
+                - /url: /gpu-compare/b200-vs-rtx-a5000
+            - listitem [ref=e518]:
+              - link "B200 vs RTX A4000" [ref=e519] [cursor=pointer]:
+                - /url: /gpu-compare/b200-vs-rtx-a4000
+            - listitem [ref=e520]:
+              - link "B200 vs RTX 6000 Ada" [ref=e521] [cursor=pointer]:
+                - /url: /gpu-compare/b200-vs-rtx-6000-ada
+            - listitem [ref=e522]:
+              - link "B200 vs RTX 5090" [ref=e523] [cursor=pointer]:
+                - /url: /gpu-compare/b200-vs-rtx-5090
+            - listitem [ref=e524]:
+              - link "B200 vs RTX 4090" [ref=e525] [cursor=pointer]:
+                - /url: /gpu-compare/b200-vs-rtx-4090
+            - listitem [ref=e526]:
+              - link "B200 vs RTX 3090" [ref=e527] [cursor=pointer]:
+                - /url: /gpu-compare/b200-vs-rtx-3090
+            - listitem [ref=e528]:
+              - link "B200 vs RTX 2000 Ada" [ref=e529] [cursor=pointer]:
+                - /url: /gpu-compare/b200-vs-rtx-2000-ada
+            - listitem [ref=e530]:
+              - link "B200 vs L40S" [ref=e531] [cursor=pointer]:
+                - /url: /gpu-compare/b200-vs-l40s
+            - listitem [ref=e532]:
+              - link "B200 vs L40" [ref=e533] [cursor=pointer]:
+                - /url: /gpu-compare/b200-vs-l40
+            - listitem [ref=e534]:
+              - link "B200 vs L4" [ref=e535] [cursor=pointer]:
+                - /url: /gpu-compare/b200-vs-l4
+            - listitem [ref=e536]:
+              - link "B200 vs H100 SXM" [ref=e537] [cursor=pointer]:
+                - /url: /gpu-compare/b200-vs-h100-sxm
+            - listitem [ref=e538]:
+              - link "B200 vs H100 PCIe" [ref=e539] [cursor=pointer]:
+                - /url: /gpu-compare/b200-vs-h100-pcie
+            - listitem [ref=e540]:
+              - link "B200 vs H100 NVL" [ref=e541] [cursor=pointer]:
+                - /url: /gpu-compare/b200-vs-h100-nvl
+            - listitem [ref=e542]:
+              - link "B200 vs A40" [ref=e543] [cursor=pointer]:
+                - /url: /gpu-compare/b200-vs-a40
+            - listitem [ref=e544]:
+              - link "B200 vs A100 PCIe" [ref=e545] [cursor=pointer]:
+                - /url: /gpu-compare/b200-vs-a100-pcie
+      - listitem [ref=e546]:
+        - button [ref=e547] [cursor=pointer]:
+          - heading "Hopper Architecture (NVIDIA H-Series)" [level=3] [ref=e548]
+      - listitem [ref=e553]:
+        - button [ref=e554] [cursor=pointer]:
+          - heading "NVIDIA Ampere Architecture" [level=3] [ref=e555]
+      - listitem [ref=e560]:
+        - button [ref=e561] [cursor=pointer]:
+          - heading "NVIDIA L-Series" [level=3] [ref=e562]
+      - listitem [ref=e567]:
+        - button [ref=e568] [cursor=pointer]:
+          - heading "NVIDIA RTX Series, Current Gen" [level=3] [ref=e569]
+      - listitem [ref=e574]:
+        - button [ref=e575] [cursor=pointer]:
+          - heading "NVIDIA RTX Series, Previous & Legacy Gen" [level=3] [ref=e576]
+  - generic [ref=e583]:
+    - generic [ref=e585]:
+      - paragraph [ref=e587]: FAQs
+      - heading "Questions? Answers." [level=2] [ref=e588]
+      - generic:
+        - paragraph
+    - generic [ref=e590]:
+      - button "What is the best GPU for AI inference?" [ref=e592] [cursor=pointer]
+      - button "What is the best GPU for LLM workloads?" [ref=e599] [cursor=pointer]
+      - button "What is the best GPU for AI and machine learning?" [ref=e606] [cursor=pointer]
+      - generic [ref=e612]:
+        - button "What is the best GPU for deep learning?" [expanded] [ref=e613] [cursor=pointer]
+        - generic "What is the best GPU for deep learning?":
+          - generic [ref=e620]:
+            - paragraph [ref=e621]: It depends on the workload, and the ranking genuinely inverts between them.
+            - paragraph [ref=e622]:
+              - strong [ref=e623]: Image generation.
+              - text: "B200 is both the fastest and the cheapest option on several models – 0.57 seconds per image on FLUX.1-schnell at $0.00107, and 1.51 seconds on Z-Image-Turbo. That combination is unusual and worth checking for your model. Where you are optimizing purely for cost, an RTX A5000 produces a FLUX.2 Klein 9B image for $0.00049 and an L40S an SDXL image for $0.00067. Note that the RTX 4090 is not a strong diffusion card in these runs: on Qwen-Image 2512 (ComfyUI fp8) it takes 44.7 seconds per image, and it is the most expensive card per image on that model."
+            - paragraph [ref=e624]:
+              - strong [ref=e625]: Video generation.
+              - text: B200 leads on the heavy models – 119 seconds for Wan 2.2 T2V A14B and 37.6 seconds for Wan 2.2 TI2V-5B. For cost rather than speed, an RTX Pro 6000 produces Wan 2.2 T2V A14B at $0.215 per video against the B200's $0.237, and on the distilled LTX-2.3 22B an RTX 4090 costs $0.00335 per video. Distilled and quantized video models change the hardware answer completely – check which variant you are running.
+            - paragraph [ref=e626]:
+              - strong [ref=e627]: Speech to text.
+              - text: This is the one workload where a mid-range card wins outright. An L40S transcribes at 58.3 times real time on Whisper large-v3-turbo (int8_float16), ahead of the H100 SXM's 55.5 times on the same model family. For cost, an RTX A5000 runs an audio hour for $0.0071.
+            - paragraph [ref=e628]:
+              - strong [ref=e629]: Vision-language.
+              - text: Qwen3-VL-8B-Instruct and Qwen2.5-VL-7B-Instruct both run on consumer cards – an RTX A5000 serves Qwen3-VL-8B at $0.65 per million output tokens. Switch the workload selector to Vision Q&A to compare them properly.
+  - generic [ref=e630]:
+    - generic [ref=e633]:
+      - generic [ref=e638]:
+        - heading "Build what’s next." [level=2] [ref=e639]
+        - paragraph [ref=e640]: Build, train, and scale AI workloads on Runpod with cloud GPUs, Serverless, and Clusters.
+      - generic [ref=e641]:
+        - link "Get started" [ref=e643] [cursor=pointer]:
+          - /url: https://console.runpod.io/deploy
+        - button "Request a demo" [ref=e646] [cursor=pointer]
+    - img "Star field background"
+  - region [ref=e651]:
+    - generic [ref=e652]:
+      - heading "Browse all GPU comparisons" [level=2] [ref=e653]
+      - paragraph [ref=e654]: Explore every GPU comparison in the Runpod directory.
+      - group [ref=e655]:
+        - generic "Show all comparisons" [ref=e656] [cursor=pointer]
+  - contentinfo [ref=e657]:
+    - generic [ref=e659]:
+      - generic [ref=e660]:
+        - link "Homepage" [ref=e661] [cursor=pointer]:
+          - /url: /
+          - paragraph [ref=e665]: "329 Bryant St #4DSan Francisco, CA 94107"
+        - generic [ref=e666]:
+          - generic [ref=e667]: Product
+          - list [ref=e668]:
+            - listitem [ref=e669]:
+              - link "Cloud GPUs" [ref=e670] [cursor=pointer]:
+                - /url: /product/cloud-gpus
+            - listitem [ref=e672]:
+              - link "Serverless POPULAR" [ref=e673] [cursor=pointer]:
+                - /url: /product/serverless
+                - generic [ref=e674]: Serverless
+                - generic [ref=e675]: POPULAR
+            - listitem [ref=e677]:
+              - link "Clusters" [ref=e678] [cursor=pointer]:
+                - /url: /product/clusters
+            - listitem [ref=e680]:
+              - link "Hub" [ref=e681] [cursor=pointer]:
+                - /url: /product/runpod-hub
+        - generic [ref=e683]:
+          - generic [ref=e684]: Use Cases
+          - list [ref=e685]:
+            - listitem [ref=e686]:
+              - link "Inference" [ref=e687] [cursor=pointer]:
+                - /url: /use-cases/inference
+            - listitem [ref=e689]:
+              - link "Fine-Tuning" [ref=e690] [cursor=pointer]:
+                - /url: /use-cases/fine-tuning
+            - listitem [ref=e692]:
+              - link "Agents" [ref=e693] [cursor=pointer]:
+                - /url: /use-cases/agents
+            - listitem [ref=e695]:
+              - link "Compute-Heavy Tasks" [ref=e696] [cursor=pointer]:
+                - /url: /use-cases/compute-heavy-tasks
+        - generic [ref=e698]:
+          - generic [ref=e699]: Resources
+          - list [ref=e700]:
+            - listitem [ref=e701]:
+              - link "Blog" [ref=e702] [cursor=pointer]:
+                - /url: /blog
+            - listitem [ref=e704]:
+              - link "Product updates" [ref=e705] [cursor=pointer]:
+                - /url: https://docs.runpod.io/release-notes
+            - listitem [ref=e709]:
+              - link "Press" [ref=e710] [cursor=pointer]:
+                - /url: /press
+            - listitem [ref=e712]:
+              - link "GPU Benchmarks" [ref=e713] [cursor=pointer]:
+                - /url: /gpu-compare
+            - listitem [ref=e715]:
+              - link "Models Directory" [ref=e716] [cursor=pointer]:
+                - /url: /models
+            - listitem [ref=e718]:
+              - link "Referral Program" [ref=e719] [cursor=pointer]:
+                - /url: /referral-and-affiliate-program
+            - listitem [ref=e721]:
+              - link "Brandkit" [ref=e722] [cursor=pointer]:
+                - /url: /brandkit
+            - listitem [ref=e724]:
+              - link "Articles" [ref=e725] [cursor=pointer]:
+                - /url: /articles
+            - listitem [ref=e727]:
+              - link "Pricing" [ref=e728] [cursor=pointer]:
+                - /url: /pricing
+            - listitem [ref=e730]:
+              - link "Case Studies" [ref=e731] [cursor=pointer]:
+                - /url: /case-studies
+            - listitem [ref=e733]:
+              - link "Startup Program" [ref=e734] [cursor=pointer]:
+                - /url: /startup-program
+            - listitem [ref=e736]:
+              - link "Docs" [ref=e737] [cursor=pointer]:
+                - /url: https://docs.runpod.io/overview
+        - generic [ref=e741]:
+          - generic [ref=e742]: Company
+          - list [ref=e743]:
+            - listitem [ref=e744]:
+              - link "About" [ref=e745] [cursor=pointer]:
+                - /url: /about
+            - listitem [ref=e747]:
+              - link "Partners" [ref=e748] [cursor=pointer]:
+                - /url: /partners
+            - listitem [ref=e750]:
+              - link "Contact" [ref=e751] [cursor=pointer]:
+                - /url: /contact
+            - listitem [ref=e753]:
+              - link "Call +1 (888) 478-6012" [ref=e754] [cursor=pointer]:
+                - /url: tel:+18884786012
+            - listitem [ref=e756]:
+              - link "Careers" [ref=e757] [cursor=pointer]:
+                - /url: /careers
+      - generic [ref=e761]:
+        - paragraph [ref=e763]: Subscribe for updates
+        - generic [ref=e764]:
+          - form "Footer Form" [ref=e765]:
+            - textbox "Email" [ref=e766]
+            - button "Subscribe" [ref=e767] [cursor=pointer]
+          - paragraph [ref=e768]:
+            - text: Runpod stores and processes your email to send you the content you requested. You can unsubscribe at any time. See the
+            - link "Runpod privacy policy" [ref=e769] [cursor=pointer]:
+              - /url: /legal/privacy-policy
+            - text: for details.
+      - generic [ref=e770]:
+        - generic [ref=e771]:
+          - link "visit All systems operational (opens in a new tab)" [ref=e772] [cursor=pointer]:
+            - /url: https://uptime.runpod.io
+            - paragraph [ref=e776]: All systems operational
+          - generic [ref=e777]:
+            - link "Visit Runpod's GitHub (opens in a new tab)" [ref=e778] [cursor=pointer]:
+              - /url: https://github.com/runpod
+            - link "Join The Runpod Discord (opens in a new tab)" [ref=e781] [cursor=pointer]:
+              - /url: https://discord.com/invite/cUpRmau42V
+            - link "Visit Runpod's X (opens in a new tab)" [ref=e784] [cursor=pointer]:
+              - /url: https://x.com/runpod
+            - link "Visit Runpod's Linkedin (opens in a new tab)" [ref=e787] [cursor=pointer]:
+              - /url: https://www.linkedin.com/company/runpod-io/
+        - generic [ref=e790]:
+          - generic [ref=e791]: © 2026 Runpod Inc.
+          - list [ref=e792]:
+            - link "Terms of Service" [ref=e793] [cursor=pointer]:
+              - /url: /legal/terms-of-service
+            - link "Privacy Policy" [ref=e794] [cursor=pointer]:
+              - /url: /legal/privacy-policy
+            - link "Cookie Policy" [ref=e795] [cursor=pointer]:
+              - /url: /legal/cookie-policy
+            - link "Cookie Settings" [ref=e796] [cursor=pointer]:
+              - /url: "#cookie-settings"
+            - link "Compliance" [ref=e797] [cursor=pointer]:
+              - /url: /legal/compliance

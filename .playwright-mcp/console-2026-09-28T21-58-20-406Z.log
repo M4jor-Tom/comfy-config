@@ -1,0 +1,20 @@
+[    5651ms] [LOG] [gpu-compare] all hooks present @ https://www.runpod.io/gpu-compare:3241
+[    5721ms] [LOG] [gpu-compare] llm models: 15 @ https://www.runpod.io/gpu-compare:3118
+[    5727ms] [LOG] [gpu-compare] rows: 24 | mode: llm | model: (none) | gpus with data: 0 @ https://www.runpod.io/gpu-compare:3158
+[    5962ms] [WARNING] [gpu-compare] removed 39 foreign option(s) from #Mode - delete the hidden Collection List in that filter block @ https://www.runpod.io/gpu-compare:3034
+[    5970ms] [WARNING] [gpu-compare] removed 39 foreign option(s) from #Workload - delete the hidden Collection List in that filter block @ https://www.runpod.io/gpu-compare:3034
+[    5980ms] [WARNING] [gpu-compare] removed 39 foreign option(s) from #Target-Model - delete the hidden Collection List in that filter block @ https://www.runpod.io/gpu-compare:3034
+[    6136ms] [LOG] [gpu-compare-fix] active @ https://www.runpod.io/gpu-compare:3439
+[   24822ms] [LOG] [gpu-compare] video models: 5 @ https://us-assets.i.posthog.com/static/1.434.17/posthog-recorder.js:0
+[   24842ms] [LOG] [gpu-compare] rows: 24 | mode: video | model: (none) | gpus with data: 0 @ https://us-assets.i.posthog.com/static/1.434.17/posthog-recorder.js:0
+[   41953ms] [LOG] [gpu-compare] video models: 5 @ https://us-assets.i.posthog.com/static/1.434.17/posthog-recorder.js:0
+[   41961ms] [LOG] [gpu-compare] rows: 24 | mode: video | model: (none) | gpus with data: 0 @ https://us-assets.i.posthog.com/static/1.434.17/posthog-recorder.js:0
+[   43665ms] [LOG] [gpu-compare] rows: 24 | mode: video | model: wan-2-2-t2v-a14b-comfy-fp8 | gpus with data: 6 @ https://us-assets.i.posthog.com/static/1.434.17/posthog-recorder.js:0
+[   46423ms] [LOG] [gpu-compare] rows: 24 | mode: video | model: wan-2-2-t2v-a14b-comfy | gpus with data: 11 @ https://us-assets.i.posthog.com/static/1.434.17/posthog-recorder.js:0
+[   49185ms] [LOG] [gpu-compare] rows: 24 | mode: video | model: wan-2-2-ti2v-5b | gpus with data: 4 @ https://us-assets.i.posthog.com/static/1.434.17/posthog-recorder.js:0
+[   51751ms] [LOG] [gpu-compare] rows: 24 | mode: video | model: ltx-2-3-22b-distilled-comfy | gpus with data: 8 @ https://us-assets.i.posthog.com/static/1.434.17/posthog-recorder.js:0
+[   54379ms] [LOG] [gpu-compare] rows: 24 | mode: video | model: wan-2-2-t2v-a14b | gpus with data: 6 @ https://us-assets.i.posthog.com/static/1.434.17/posthog-recorder.js:0
+[   68466ms] [LOG] [gpu-compare] video models: 5 @ https://us-assets.i.posthog.com/static/1.434.17/posthog-recorder.js:0
+[   68478ms] [LOG] [gpu-compare] rows: 24 | mode: video | model: (none) | gpus with data: 0 @ https://us-assets.i.posthog.com/static/1.434.17/posthog-recorder.js:0
+[   68548ms] [LOG] [gpu-compare] rows: 24 | mode: video | model: wan-2-2-t2v-a14b | gpus with data: 6 @ https://us-assets.i.posthog.com/static/1.434.17/posthog-recorder.js:0
+[   69902ms] [LOG] [gpu-compare] rows: 24 | mode: video | model: wan-2-2-t2v-a14b-comfy-fp8 | gpus with data: 6 @ https://us-assets.i.posthog.com/static/1.434.17/posthog-recorder.js:0

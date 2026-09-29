@@ -1,0 +1,76 @@
+- generic [active] [ref=f3e1]:
+  - banner [ref=f3e2]:
+    - navigation [ref=f3e3]:
+      - link [ref=f3e5] [cursor=pointer]:
+        - /url: /
+      - generic [ref=f3e18]:
+        - link "Search" [ref=f3e19] [cursor=pointer]:
+          - /url: /search
+        - button "Sign In" [ref=f3e21]
+  - generic [ref=f3e23]:
+    - generic [ref=f3e24]:
+      - main [ref=f3e25]:
+        - generic [ref=f3e26]:
+          - generic [ref=f3e27]:
+            - link [ref=f3e28] [cursor=pointer]:
+              - /url: /c/912829806415085598
+              - img "Runpod" [ref=f3e30]
+            - generic [ref=f3e31]:
+              - generic [ref=f3e32]:
+                - link "Runpod" [ref=f3e33] [cursor=pointer]:
+                  - /url: /c/912829806415085598
+                - generic [ref=f3e34]: •
+                - generic [ref=f3e35]: 3y ago
+                - generic [ref=f3e36]: •
+                - generic [ref=f3e37]: 1 reply
+              - link "thanatos121." [ref=f3e41] [cursor=pointer]:
+                - /url: /u/776537543810351107
+          - heading "Slow model download speeds/bandwidth" [level=1] [ref=f3e42]
+          - generic [ref=f3e43]: Can anyone explain to me why the download speed is so bad from huggingface on Runpod? I consistently get 10-30 MB/s download speeds compared to 100+ MB/s on Vast.ai. I have often had to have instances running for 1-5 hours just to download LLama 3 70b or LLaVa 34b. Quite frankly, this issue is so bad that it has pushed me to vast.ai for most model training. The only issue I have seen with vast, is I can't select 5 GPUs instead of 4 or 8 which is the required amount for our use-case. Running batch production deployments is also a pain because of the download speeds. Your platform is really suffering because of this problem.
+        - generic [ref=f3e48]:
+          - heading "No replies yet" [level=3] [ref=f3e49]
+          - paragraph [ref=f3e50]: Join the Discord to continue the conversation
+          - generic [ref=f3e51]:
+            - img "Runpod" [ref=f3e53]
+            - generic [ref=f3e54]:
+              - heading "Runpod" [level=4] [ref=f3e55]
+              - paragraph [ref=f3e56]: We're a community of enthusiasts, engineers, and enterprises, all sharing insights on AI, Machine Learning and GPUs!
+              - paragraph [ref=f3e57]: 23,681 Members
+              - link "Join" [ref=f3e58] [cursor=pointer]:
+                - /url: https://discord.gg/runpod
+      - complementary [ref=f3e59]:
+        - generic [ref=f3e61]:
+          - generic [ref=f3e62]: Was this page helpful?
+          - generic [ref=f3e63]:
+            - button "Yes" [ref=f3e64]
+            - button "No" [ref=f3e66]
+    - textbox "Ask a question..." [ref=f3e70]
+  - generic [ref=f3e72]:
+    - button "Expand footer" [ref=f3e73] [cursor=pointer]:
+      - generic [ref=f3e74]:
+        - paragraph [ref=f3e75]: © 2026 Hedgehog Software, LLC
+        - generic [ref=f3e76]:
+          - link "Twitter" [ref=f3e77]:
+            - /url: https://www.twitter.com/answeroverflow
+          - link "GitHub" [ref=f3e81]:
+            - /url: https://www.github.com/answeroverflow/answeroverflow
+          - link "Discord" [ref=f3e85]:
+            - /url: https://discord.answeroverflow.com
+      - generic [ref=f3e89]:
+        - generic [ref=f3e91]:
+          - button "System" [ref=f3e92]
+          - button "Light" [ref=f3e96]
+          - button "Dark" [ref=f3e104]
+        - generic [ref=f3e108]: More
+    - generic [ref=f3e113]:
+      - link "Communities" [ref=f3e114] [cursor=pointer]:
+        - /url: https://www.answeroverflow.com/browse
+      - link "Docs" [ref=f3e115] [cursor=pointer]:
+        - /url: https://www.answeroverflow.com/docs/overview
+      - link "About" [ref=f3e116] [cursor=pointer]:
+        - /url: https://www.answeroverflow.com/about
+      - link "Terms" [ref=f3e117] [cursor=pointer]:
+        - /url: https://www.answeroverflow.com/tos
+      - link "Privacy" [ref=f3e118] [cursor=pointer]:
+        - /url: https://www.answeroverflow.com/privacy
+  - alert [ref=f3e119]

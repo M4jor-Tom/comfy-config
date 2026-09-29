@@ -1,0 +1,107 @@
+- generic [active] [ref=f8e1]:
+  - banner [ref=f8e2]:
+    - navigation [ref=f8e3]:
+      - link [ref=f8e5] [cursor=pointer]:
+        - /url: /
+      - generic [ref=f8e18]:
+        - link "Search" [ref=f8e19] [cursor=pointer]:
+          - /url: /search
+        - button "Sign In" [ref=f8e21]
+  - generic [ref=f8e23]:
+    - generic [ref=f8e24]:
+      - main [ref=f8e25]:
+        - generic [ref=f8e26]:
+          - generic [ref=f8e27]:
+            - link [ref=f8e28] [cursor=pointer]:
+              - /url: /c/912829806415085598
+              - img "Runpod" [ref=f8e30]
+            - generic [ref=f8e31]:
+              - generic [ref=f8e32]:
+                - link "Runpod" [ref=f8e33] [cursor=pointer]:
+                  - /url: /c/912829806415085598
+                - generic [ref=f8e34]: •
+                - generic [ref=f8e35]: 13mo ago
+                - generic [ref=f8e36]: •
+                - generic [ref=f8e37]: 2 replies
+              - link "Lucky" [ref=f8e41] [cursor=pointer]:
+                - /url: /u/662760364462833669
+          - heading "Upload speed" [level=1] [ref=f8e42]
+          - generic [ref=f8e43]: Almost 100% of the time, when trying to upload files, the upload speed is below 50mb/s, very often below 20, however I sometimes must setup a new pod and upload datasets up to 100GB, hox am I supposed to have a faster internet for my pods? i do not want to both wait and pay 10 hours of GPUs just to upload a file, what can I do?
+        - generic [ref=f8e49]:
+          - generic [ref=f8e55]:
+            - img "ech00o" [ref=f8e58]
+            - generic [ref=f8e60]:
+              - generic [ref=f8e61]:
+                - link "ech00o" [ref=f8e62] [cursor=pointer]:
+                  - /url: /u/235238279908163585
+                - generic [ref=f8e63]: •
+                - generic [ref=f8e64]: 9/10/25, 12:01 AM
+              - generic [ref=f8e66]:
+                - generic [ref=f8e67]:
+                  - text: "@Lucky my recommendation is:a) use a CPU podb) Use:"
+                  - link "https://github.com/justinwlin/Runpod-Network-Volume-Storage-Tool" [ref=f8e68] [cursor=pointer]:
+                    - /url: https://github.com/justinwlin/Runpod-Network-Volume-Storage-Tool
+                  - text: and directly upload from computer to network storage rather than have a GPU runningCan try this gui with pretty fast upload too:c)
+                  - link "https://docs.runpod.io/community-solutions/copyparty-file-manager/overview" [ref=f8e69] [cursor=pointer]:
+                    - /url: https://docs.runpod.io/community-solutions/copyparty-file-manager/overview
+                - generic [ref=f8e70]:
+                  - generic [ref=f8e71]: GitHub
+                  - 'link "GitHub - justinwlin/Runpod-Network-Volume-Storage-Tool: CLI / Funct..." [ref=f8e73] [cursor=pointer]':
+                    - /url: https://github.com/justinwlin/Runpod-Network-Volume-Storage-Tool
+                  - generic [ref=f8e74]: CLI / Function call / API server to manager Runpod Network Volume Storage - justinwlin/Runpod-Network-Volume-Storage-Tool
+                  - button [ref=f8e77] [cursor=pointer]:
+                    - 'img "GitHub - justinwlin/Runpod-Network-Volume-Storage-Tool: CLI / Funct..." [ref=f8e78]'
+                - generic [ref=f8e79]:
+                  - generic [ref=f8e80]: Runpod Documentation
+                  - link "CopyParty file manager - Runpod Documentation" [ref=f8e82] [cursor=pointer]:
+                    - /url: https://docs.runpod.io/community-solutions/copyparty-file-manager/overview
+                  - generic [ref=f8e83]: Web-based GUI for easy file browsing, uploading, downloading, and media viewing on Runpod
+                  - button [ref=f8e86] [cursor=pointer]:
+                    - img "CopyParty file manager - Runpod Documentation" [ref=f8e87]
+          - generic [ref=f8e89]:
+            - heading "Continue the conversation" [level=3] [ref=f8e90]
+            - paragraph [ref=f8e91]: Join the Discord to ask follow-up questions and connect with the community
+            - generic [ref=f8e92]:
+              - img "Runpod" [ref=f8e94]
+              - generic [ref=f8e95]:
+                - heading "Runpod" [level=4] [ref=f8e96]
+                - paragraph [ref=f8e97]: We're a community of enthusiasts, engineers, and enterprises, all sharing insights on AI, Machine Learning and GPUs!
+                - paragraph [ref=f8e98]: 23,681 Members
+                - link "Join" [ref=f8e99] [cursor=pointer]:
+                  - /url: https://discord.gg/runpod
+      - complementary [ref=f8e101]:
+        - generic [ref=f8e103]:
+          - generic [ref=f8e104]: Was this page helpful?
+          - generic [ref=f8e105]:
+            - button "Yes" [ref=f8e106]
+            - button "No" [ref=f8e108]
+    - textbox "Ask a question..." [ref=f8e112]
+  - generic [ref=f8e114]:
+    - button "Expand footer" [ref=f8e115] [cursor=pointer]:
+      - generic [ref=f8e116]:
+        - paragraph [ref=f8e117]: © 2026 Hedgehog Software, LLC
+        - generic [ref=f8e118]:
+          - link "Twitter" [ref=f8e119]:
+            - /url: https://www.twitter.com/answeroverflow
+          - link "GitHub" [ref=f8e123]:
+            - /url: https://www.github.com/answeroverflow/answeroverflow
+          - link "Discord" [ref=f8e127]:
+            - /url: https://discord.answeroverflow.com
+      - generic [ref=f8e131]:
+        - generic [ref=f8e133]:
+          - button "System" [ref=f8e134]
+          - button "Light" [ref=f8e138]
+          - button "Dark" [ref=f8e146]
+        - generic [ref=f8e150]: More
+    - generic [ref=f8e155]:
+      - link "Communities" [ref=f8e156] [cursor=pointer]:
+        - /url: https://www.answeroverflow.com/browse
+      - link "Docs" [ref=f8e157] [cursor=pointer]:
+        - /url: https://www.answeroverflow.com/docs/overview
+      - link "About" [ref=f8e158] [cursor=pointer]:
+        - /url: https://www.answeroverflow.com/about
+      - link "Terms" [ref=f8e159] [cursor=pointer]:
+        - /url: https://www.answeroverflow.com/tos
+      - link "Privacy" [ref=f8e160] [cursor=pointer]:
+        - /url: https://www.answeroverflow.com/privacy
+  - alert [ref=f8e161]
