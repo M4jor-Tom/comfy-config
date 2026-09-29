@@ -9,10 +9,18 @@ from datetime import timedelta
 from pathlib import Path
 
 from .comfyui import ComfyUI, ComfyUIError
-from .config import ConfigError, Infra, clear_state, load_infra, read_state, write_state
+from .config import (
+    ConfigError,
+    GpuChoice,
+    Infra,
+    clear_state,
+    load_infra,
+    read_state,
+    write_state,
+)
 from .provision import provision
 from .runpod_api import Client, RunpodError
-from .tunnel import Tunnel, TunnelError
+from .tunnel import Tunnel, TunnelError, forward_spec
 
 COMMANDS = ("provision", "up", "run", "down", "status")
 
@@ -51,13 +59,25 @@ def cmd_provision(args) -> int:
 handlers["provision"] = cmd_provision
 
 
-def _bring_up(client: Client, infra: Infra) -> str:
+def _bring_up(client: Client, infra: Infra) -> tuple[str, GpuChoice, str]:
     """Pick a GPU with capacity, create the pod, and wait until SSH is reachable.
 
+    Returns (pod_id, the GpuChoice actually used, its availability) so a
+    caller never has to re-pick and risk disagreeing with what was actually
+    provisioned -- GPU stock genuinely moves within hours, so two separate
+    pick_gpu calls in one invocation are not guaranteed to agree.
+
+    Persists {pod_id, started, gpu} the instant the pod exists, before the
+    ssh-wait loop below -- which can run for up to _SSH_READY_TIMEOUT and is
+    exactly where a pod is most likely to get stuck on a first boot of a new
+    template. Without this, a timeout here would raise with the pod already
+    created, running, and billing, but completely untracked: `down` would
+    report nothing running.
+
     Extracted out of `cmd_up` so `run` (Task 8) can reuse the exact same
-    bring-up sequence. Returns the pod id.
+    bring-up sequence, early persistence included.
     """
-    choice, _ = client.pick_gpu(infra.gpus, infra.datacenter)
+    choice, availability = client.pick_gpu(infra.gpus, infra.datacenter)
     pod = client.create_pod(
         name="comfy-up",
         template_id=choice.template,  # tied to the GPU's CUDA line — must match
@@ -66,12 +86,13 @@ def _bring_up(client: Client, infra: Infra) -> str:
         gpu_id=choice.id,
     )
     pod_id = str(pod["id"])
+    write_state({"pod_id": pod_id, "started": int(time.time()), "gpu": choice.id})
 
     deadline = time.time() + _SSH_READY_TIMEOUT
     while time.time() < deadline:
         try:
             client.ssh_target(pod_id)
-            return pod_id
+            return pod_id, choice, availability
         except RunpodError:
             time.sleep(10)
     raise RunpodError(f"pod {pod_id} never exposed SSH within {_SSH_READY_TIMEOUT}s")
@@ -81,22 +102,10 @@ def cmd_up(args) -> int:
     infra = load_infra(INFRA_PATH)
     client = _client()
 
-    # Picked here (not just inside _bring_up) so the choice is available to
-    # report and to persist in state; _bring_up repeats the pick internally
-    # to stay self-contained for `run`'s sake. Runpod's catalog is not
-    # volatile enough for the two calls to disagree within one invocation.
-    choice, availability = client.pick_gpu(infra.gpus, infra.datacenter)
-    print(f"GPU: {choice.id} (availability: {availability})")
-
     print("creating pod...")
-    pod_id = _bring_up(client, infra)
+    pod_id, choice, availability = _bring_up(client, infra)
+    print(f"GPU: {choice.id} (availability: {availability})")
     print(f"pod: {pod_id}")
-    started = int(time.time())
-
-    # Recorded now, before the tunnel and the ComfyUI wait can fail: a pod
-    # that exists must always be findable by `down`, even if this command
-    # dies before it would otherwise reach the write_state below.
-    write_state({"pod_id": pod_id, "started": started, "gpu": choice.id})
 
     host, port, user = client.ssh_target(pod_id)
     print("opening tunnel...")
@@ -110,14 +119,12 @@ def cmd_up(args) -> int:
     stats = ComfyUI(tun.url).wait_ready()
     system = stats.get("system", {})
 
-    write_state(
-        {
-            "pod_id": pod_id,
-            "started": started,
-            "gpu": choice.id,
-            "tunnel_pid": tun.pid,
-        }
-    )
+    # _bring_up already wrote pod_id/started/gpu; add the tunnel's identity
+    # to that same record rather than reconstructing it from scratch.
+    state = read_state()
+    state["tunnel_pid"] = tun.pid
+    state["tunnel_port"] = tun.local_port
+    write_state(state)
 
     print(f"url: {tun.url}")
     print(
@@ -130,13 +137,38 @@ def cmd_up(args) -> int:
 handlers["up"] = cmd_up
 
 
-def _kill_tunnel(pid: int | None) -> None:
+def _pid_cmdline(pid: int) -> str:
+    """Space-joined argv of a running process, read from /proc. Raises
+    FileNotFoundError if the pid no longer exists, or another OSError (e.g.
+    PermissionError) if it exists but could not be read -- which happens
+    when it now belongs to a different process entirely."""
+    raw = Path(f"/proc/{pid}/cmdline").read_bytes()
+    return raw.replace(b"\0", b" ").decode(errors="replace")
+
+
+def _kill_tunnel(pid: int | None, port: int | None) -> None:
+    """SIGTERM the tunnel, but only after confirming the pid is still our ssh
+    process. A long `up` -> work -> `down` session can outlive the tunnel,
+    and Linux recycles pids, so signalling a bare pid with no identity check
+    risks hitting an unrelated process that happens to have inherited it."""
     if not pid:
         return
     try:
+        cmdline = _pid_cmdline(pid)
+    except FileNotFoundError:
+        return  # already gone -- nothing to signal, nothing to warn about
+    except OSError:
+        print(f"tunnel pid {pid} could not be verified — not signalling it")
+        return
+
+    if not (port and "ssh" in cmdline and forward_spec(port) in cmdline):
+        print(f"tunnel pid {pid} no longer looks like our ssh tunnel — not signalling it")
+        return
+
+    try:
         os.kill(pid, signal.SIGTERM)
     except ProcessLookupError:
-        pass  # already gone
+        pass  # gone between the check above and the signal
 
 
 def cmd_down(args) -> int:
@@ -149,7 +181,7 @@ def cmd_down(args) -> int:
     client = _client()
     spend = client.pod_spend(pod_id)  # read before terminating
     client.terminate_pod(pod_id)
-    _kill_tunnel(state.get("tunnel_pid"))
+    _kill_tunnel(state.get("tunnel_pid"), state.get("tunnel_port"))
     clear_state()
 
     spend_str = f"${spend:.2f}" if spend is not None else "unknown"

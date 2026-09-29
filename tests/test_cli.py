@@ -1,4 +1,5 @@
 import argparse
+import os
 import signal
 import time
 
@@ -94,17 +95,23 @@ class FakeComfy:
 # --- _bring_up ---------------------------------------------------------
 
 
-def test_bring_up_returns_pod_id_once_ssh_is_ready():
-    client = FakeCliClient(pod_id="pod-99")
-    pod_id = cli._bring_up(client, _infra())
+def test_bring_up_returns_pod_id_choice_and_availability_once_ssh_is_ready(
+    monkeypatch, tmp_path
+):
+    monkeypatch.chdir(tmp_path)
+    client = FakeCliClient(pod_id="pod-99", availability="HIGH")
+    pod_id, choice, availability = cli._bring_up(client, _infra())
     assert pod_id == "pod-99"
+    assert choice == BLACKWELL
+    assert availability == "HIGH"
     assert "create_pod" in client.calls
     assert "ssh_target" in client.calls
 
 
-def test_bring_up_uses_the_picked_gpus_own_matching_template():
+def test_bring_up_uses_the_picked_gpus_own_matching_template(monkeypatch, tmp_path):
     """The template is tied to the GPU's CUDA line -- mixing them is the
     brief's documented most-common first-run failure."""
+    monkeypatch.chdir(tmp_path)
     client = FakeCliClient()
     client.pick_gpu = lambda gpus, dc: (ADA, "MEDIUM")  # force the fallback GPU
     cli._bring_up(client, _infra())
@@ -112,7 +119,8 @@ def test_bring_up_uses_the_picked_gpus_own_matching_template():
     assert client.created_with["template_id"] == ADA.template
 
 
-def test_bring_up_polls_ssh_target_until_it_stops_raising(monkeypatch):
+def test_bring_up_polls_ssh_target_until_it_stops_raising(monkeypatch, tmp_path):
+    monkeypatch.chdir(tmp_path)
     client = FakeCliClient(pod_id="pod-5")
     real_ssh_target = client.ssh_target
     attempts = {"n": 0}
@@ -126,11 +134,13 @@ def test_bring_up_polls_ssh_target_until_it_stops_raising(monkeypatch):
     client.ssh_target = flaky
     monkeypatch.setattr(cli.time, "sleep", lambda s: None)
 
-    assert cli._bring_up(client, _infra()) == "pod-5"
+    pod_id, _, _ = cli._bring_up(client, _infra())
+    assert pod_id == "pod-5"
     assert attempts["n"] == 3
 
 
-def test_bring_up_gives_up_after_the_ssh_timeout(monkeypatch):
+def test_bring_up_gives_up_after_the_ssh_timeout(monkeypatch, tmp_path):
+    monkeypatch.chdir(tmp_path)
     client = FakeCliClient()
 
     def never_ready(pod_id):
@@ -142,6 +152,32 @@ def test_bring_up_gives_up_after_the_ssh_timeout(monkeypatch):
 
     with pytest.raises(RunpodError, match="never exposed SSH"):
         cli._bring_up(client, _infra())
+
+
+def test_bring_up_persists_pod_id_before_the_ssh_wait_so_a_timeout_does_not_leak_it(
+    monkeypatch, tmp_path
+):
+    """Critical fix (Finding 1): the first-ever boot of a new template is
+    exactly the plausible case for this loop to exhaust. The pod already
+    exists and bills by the time create_pod returns -- state must record it
+    before the wait loop, not only if/when _bring_up successfully returns."""
+    monkeypatch.chdir(tmp_path)
+    client = FakeCliClient(pod_id="pod-13")
+
+    def never_ready(pod_id):
+        raise RunpodError("runtime is still null")
+
+    client.ssh_target = never_ready
+    monkeypatch.setattr(cli, "_SSH_READY_TIMEOUT", 0)
+    monkeypatch.setattr(cli.time, "sleep", lambda s: None)
+
+    with pytest.raises(RunpodError, match="never exposed SSH"):
+        cli._bring_up(client, _infra())
+
+    state = read_state()
+    assert state["pod_id"] == "pod-13"
+    assert state["gpu"] == BLACKWELL.id
+    assert "tunnel_pid" not in state  # never got anywhere near the tunnel
 
 
 # --- cmd_up --------------------------------------------------------------
@@ -169,6 +205,7 @@ def test_cmd_up_creates_pod_with_matching_template_opens_tunnel_and_persists_sta
     assert state["pod_id"] == "pod-42"
     assert state["gpu"] == BLACKWELL.id
     assert state["tunnel_pid"] == 54321
+    assert state["tunnel_port"] == 8188
     assert isinstance(state["started"], int)
 
     out = capsys.readouterr().out
@@ -177,6 +214,23 @@ def test_cmd_up_creates_pod_with_matching_template_opens_tunnel_and_persists_sta
     assert "0.3.0" in out          # ComfyUI version
     assert "2.4.0+cu124" in out    # torch build
     assert "HIGH" in out           # availability
+
+
+def test_cmd_up_calls_pick_gpu_exactly_once(monkeypatch, tmp_path):
+    """Important fix (Finding 2): GPU stock genuinely moves within hours
+    (observed live), so calling pick_gpu twice in one `up` risked printing
+    and storing a GPU different from the one actually provisioned.
+    _bring_up must be the only caller."""
+    monkeypatch.chdir(tmp_path)
+    client = FakeCliClient()
+    monkeypatch.setattr(cli, "load_infra", lambda path: _infra())
+    monkeypatch.setattr(cli, "_client", lambda: client)
+    monkeypatch.setattr(cli, "Tunnel", FakeTunnel)
+    monkeypatch.setattr(cli, "ComfyUI", FakeComfy)
+
+    cli.cmd_up(argparse.Namespace())
+
+    assert client.calls.count("pick_gpu") == 1
 
 
 def test_cmd_up_falls_through_to_the_second_gpus_own_template(monkeypatch, tmp_path):
@@ -217,9 +271,10 @@ def test_cmd_up_never_requests_public_ports_beyond_ssh(monkeypatch, tmp_path):
 def test_cmd_up_persists_pod_id_before_the_tunnel_so_a_later_failure_does_not_leak_it(
     monkeypatch, tmp_path
 ):
-    """If the tunnel or the ComfyUI wait fails, `down` must still be able to
-    find and terminate the pod -- so pod_id is on disk before either can fail,
-    not only after cmd_up fully succeeds."""
+    """If the tunnel fails to establish (ssh-readiness already succeeded
+    inside _bring_up, which is what wrote this), `down` must still be able
+    to find and terminate the pod. Complements the Finding-1 test above,
+    which covers the earlier failure point (the ssh-wait loop itself)."""
     monkeypatch.chdir(tmp_path)
     client = FakeCliClient(pod_id="pod-9")
     monkeypatch.setattr(cli, "load_infra", lambda path: _infra())
@@ -243,6 +298,21 @@ def test_cmd_up_persists_pod_id_before_the_tunnel_so_a_later_failure_does_not_le
 # --- cmd_down --------------------------------------------------------------
 
 
+def test_pid_cmdline_reads_the_real_proc_filesystem():
+    """Sanity check against the actual OS, not a mock: confirms /proc really
+    does hold our own argv (this test process's), null-byte-joined into a
+    readable string. Finding 4's whole safety check depends on this working
+    for real, not just against a fake in the tests below."""
+    cmdline = cli._pid_cmdline(os.getpid())
+    assert cmdline
+    assert "python" in cmdline.lower() or "pytest" in cmdline.lower()
+
+
+def test_pid_cmdline_raises_file_not_found_for_a_pid_that_does_not_exist():
+    with pytest.raises(FileNotFoundError):
+        cli._pid_cmdline(2**30)  # astronomically unlikely to be a real pid
+
+
 def test_cmd_down_with_no_state_reports_and_exits_zero_without_calling_the_api(
     monkeypatch, tmp_path, capsys
 ):
@@ -262,9 +332,17 @@ def test_cmd_down_reads_spend_before_terminating_kills_tunnel_and_clears_state(
     monkeypatch, tmp_path, capsys
 ):
     monkeypatch.chdir(tmp_path)
-    write_state({"pod_id": "pod-1", "started": 1000, "gpu": "x", "tunnel_pid": 12345})
+    write_state({
+        "pod_id": "pod-1", "started": 1000, "gpu": "x",
+        "tunnel_pid": 12345, "tunnel_port": 8188,
+    })
     client = FakeCliClient(spend=1.23)
     monkeypatch.setattr(cli, "_client", lambda: client)
+    # A live tunnel's /proc/<pid>/cmdline: ssh with the recorded -L spec.
+    monkeypatch.setattr(
+        cli, "_pid_cmdline",
+        lambda pid: "ssh -N -T -L 8188:127.0.0.1:8188 root@1.2.3.4",
+    )
     killed = []
     monkeypatch.setattr(cli.os, "kill", lambda pid, sig: killed.append((pid, sig)))
 
@@ -279,10 +357,40 @@ def test_cmd_down_reads_spend_before_terminating_kills_tunnel_and_clears_state(
 
 
 def test_cmd_down_tolerates_a_tunnel_pid_that_is_already_gone(monkeypatch, tmp_path):
+    """/proc/<pid> no longer exists at all -- the ordinary, expected way a
+    tunnel is already gone (ssh exited on its own, or a prior `down` already
+    reaped it). Silent: no warning, no signal, no error."""
     monkeypatch.chdir(tmp_path)
-    write_state({"pod_id": "pod-1", "started": 1000, "tunnel_pid": 99999})
+    write_state({"pod_id": "pod-1", "started": 1000, "tunnel_pid": 99999, "tunnel_port": 8188})
     client = FakeCliClient()
     monkeypatch.setattr(cli, "_client", lambda: client)
+
+    def gone(pid):
+        raise FileNotFoundError
+
+    monkeypatch.setattr(cli, "_pid_cmdline", gone)
+    killed = []
+    monkeypatch.setattr(cli.os, "kill", lambda pid, sig: killed.append((pid, sig)))
+
+    assert cli.cmd_down(argparse.Namespace()) == 0  # must not raise
+    assert read_state() == {}
+    assert killed == []  # never reached os.kill -- nothing to signal
+
+
+def test_cmd_down_tolerates_the_tunnel_dying_between_the_check_and_the_signal(
+    monkeypatch, tmp_path
+):
+    """A narrower race than 'already gone': /proc/<pid>/cmdline still
+    resolves (and matches our ssh tunnel) but the process has exited by the
+    time we actually send the signal."""
+    monkeypatch.chdir(tmp_path)
+    write_state({"pod_id": "pod-1", "started": 1000, "tunnel_pid": 5555, "tunnel_port": 8188})
+    client = FakeCliClient()
+    monkeypatch.setattr(cli, "_client", lambda: client)
+    monkeypatch.setattr(
+        cli, "_pid_cmdline",
+        lambda pid: "ssh -N -T -L 8188:127.0.0.1:8188 root@1.2.3.4",
+    )
 
     def raise_lookup(pid, sig):
         raise ProcessLookupError
@@ -291,6 +399,50 @@ def test_cmd_down_tolerates_a_tunnel_pid_that_is_already_gone(monkeypatch, tmp_p
 
     assert cli.cmd_down(argparse.Namespace()) == 0  # must not raise
     assert read_state() == {}
+
+
+def test_cmd_down_refuses_to_signal_a_pid_that_is_no_longer_our_tunnel(
+    monkeypatch, tmp_path, capsys
+):
+    """Important fix (Finding 4): pids get recycled by the OS. If
+    /proc/<pid>/cmdline no longer looks like the ssh -L forward we recorded,
+    `down` must not signal it -- it could be an unrelated process by now."""
+    monkeypatch.chdir(tmp_path)
+    write_state({"pod_id": "pod-1", "started": 1000, "tunnel_pid": 7777, "tunnel_port": 8188})
+    client = FakeCliClient()
+    monkeypatch.setattr(cli, "_client", lambda: client)
+    # pid 7777 now belongs to some unrelated process.
+    monkeypatch.setattr(cli, "_pid_cmdline", lambda pid: "/usr/bin/some-other-daemon --serve")
+    killed = []
+    monkeypatch.setattr(cli.os, "kill", lambda pid, sig: killed.append((pid, sig)))
+
+    rc = cli.cmd_down(argparse.Namespace())
+
+    assert rc == 0
+    assert killed == []  # must NOT have signalled the unrelated process
+    out = capsys.readouterr().out.lower()
+    assert "7777" in out
+    assert "not signalling" in out
+
+
+def test_cmd_down_declines_to_signal_when_tunnel_port_was_never_recorded(
+    monkeypatch, tmp_path
+):
+    """Defence in depth: with no recorded port to match against, identity
+    cannot be confirmed, so the safe default is to skip the kill."""
+    monkeypatch.chdir(tmp_path)
+    write_state({"pod_id": "pod-1", "started": 1000, "tunnel_pid": 4242})  # no tunnel_port
+    client = FakeCliClient()
+    monkeypatch.setattr(cli, "_client", lambda: client)
+    monkeypatch.setattr(
+        cli, "_pid_cmdline",
+        lambda pid: "ssh -N -T -L 8188:127.0.0.1:8188 root@1.2.3.4",
+    )
+    killed = []
+    monkeypatch.setattr(cli.os, "kill", lambda pid, sig: killed.append((pid, sig)))
+
+    assert cli.cmd_down(argparse.Namespace()) == 0
+    assert killed == []
 
 
 def test_cmd_down_reports_unknown_spend_rather_than_crashing(monkeypatch, tmp_path, capsys):

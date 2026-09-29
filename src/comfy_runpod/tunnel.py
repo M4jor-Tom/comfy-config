@@ -9,10 +9,27 @@ from __future__ import annotations
 import socket
 import subprocess
 import time
+from pathlib import Path
+
+# Where ssh's stderr goes. A real file, not a pipe: the tunnel can be
+# detached (comfy up does this) so it outlives the process that opened it,
+# and a pipe's read end closing when we exit would make a later write by
+# ssh raise SIGPIPE and kill it -- the opposite of outliving the command.
+# Fixed and predictable (not a random temp name) so a live tunnel's actual
+# ssh errors are always in the same place to look, and so TunnelError can
+# quote them instead of just an exit code.
+LOG_PATH = Path(".comfy-tunnel.log")
 
 
 class TunnelError(Exception):
     """The forward could not be established, or died."""
+
+
+def forward_spec(local_port: int) -> str:
+    """The -L argument's value, e.g. '8188:127.0.0.1:8188'. Shared with
+    cli.py's pid-identity check in `down`, so both sides agree on what a
+    live tunnel's ssh process should have on its command line."""
+    return f"{local_port}:127.0.0.1:8188"
 
 
 class Tunnel:
@@ -22,6 +39,7 @@ class Tunnel:
         self.user = user
         self.local_port = local_port
         self._proc: subprocess.Popen | None = None
+        self._log_path = LOG_PATH
 
     @property
     def url(self) -> str:
@@ -39,7 +57,7 @@ class Tunnel:
             "-N",  # forward only, run no remote command
             "-T",  # no pseudo-terminal
             "-p", str(self.port),
-            "-L", f"{self.local_port}:127.0.0.1:8188",
+            "-L", forward_spec(self.local_port),
             "-o", "ExitOnForwardFailure=yes",
             "-o", "StrictHostKeyChecking=accept-new",
             "-o", "ServerAliveInterval=15",
@@ -48,19 +66,19 @@ class Tunnel:
         ]
 
     def __enter__(self) -> Tunnel:
-        self._proc = subprocess.Popen(
-            self.ssh_command(),
-            stdin=subprocess.DEVNULL,
-            stdout=subprocess.DEVNULL,
-            # DEVNULL, not PIPE: a caller may detach this process (comfy up
-            # does) so it outlives us. A PIPE's read end closes when we exit,
-            # and ssh writing to it after that gets SIGPIPE and dies — exactly
-            # the opposite of outliving the command.
-            stderr=subprocess.DEVNULL,
-            # New session so the tunnel is not in our controlling terminal's
-            # process group: closing the shell must not SIGHUP it.
-            start_new_session=True,
-        )
+        log = open(self._log_path, "wb")  # truncate: no stale content from a past run
+        try:
+            self._proc = subprocess.Popen(
+                self.ssh_command(),
+                stdin=subprocess.DEVNULL,
+                stdout=subprocess.DEVNULL,
+                stderr=log,
+                # New session so the tunnel is not in our controlling terminal's
+                # process group: closing the shell must not SIGHUP it.
+                start_new_session=True,
+            )
+        finally:
+            log.close()  # the child dup'd its own fd; our copy can close now
         self._wait_for_local_port()
         return self
 
@@ -76,12 +94,20 @@ class Tunnel:
                 self._proc.kill()
         self._proc = None
 
+    def _read_log(self) -> str:
+        try:
+            text = self._log_path.read_text(errors="replace").strip()
+        except OSError:
+            return "(no log)"
+        return text[-400:] if text else "(ssh wrote nothing to stderr)"
+
     def _wait_for_local_port(self, timeout: int = 60) -> None:
         deadline = time.time() + timeout
         while time.time() < deadline:
             if self._proc and self._proc.poll() is not None:
                 raise TunnelError(
-                    f"ssh exited immediately with code {self._proc.returncode}"
+                    f"ssh exited immediately with code {self._proc.returncode}: "
+                    f"{self._read_log()} (full log: {self._log_path})"
                 )
             with socket.socket() as s:
                 s.settimeout(2)
@@ -90,5 +116,6 @@ class Tunnel:
             time.sleep(1)
         self.close()
         raise TunnelError(
-            f"port {self.local_port} never opened. Is something already using it?"
+            f"port {self.local_port} never opened. Is something already using "
+            f"it? ssh log: {self._read_log()} (full log: {self._log_path})"
         )
