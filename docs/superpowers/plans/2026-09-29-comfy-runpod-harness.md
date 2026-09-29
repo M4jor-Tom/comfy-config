@@ -980,7 +980,6 @@ before Step 4.** The volume persists until deliberately deleted.
 
 **Files:**
 - Create: `src/comfy_runpod/provision.py`
-- Create: `scripts/download-models.sh`
 - Modify: `src/comfy_runpod/cli.py`
 - Create: `tests/test_provision.py`
 
