@@ -86,3 +86,171 @@ def test_wait_ready_raises_comfyui_error_after_timeout(monkeypatch):
     with pytest.raises(ComfyUIError, match="not ready within 0s"):
         ComfyUI("http://127.0.0.1:8188").wait_ready(timeout=0)
     assert calls["n"] == 0
+
+
+# --- queue / history / outputs_of ------------------------------------------
+
+
+class FakeComfy(ComfyUI):
+    """Overrides only the two transport seams, so URL/parse logic is real."""
+
+    def __init__(self, responses):
+        super().__init__("http://127.0.0.1:8188")
+        self.responses = responses
+        self.posted = []
+
+    def _get_json(self, path, timeout=30):
+        if path not in self.responses:
+            raise ComfyUIError(f"no canned response for {path}")
+        return self.responses[path]
+
+    def _post_json(self, path, body, timeout=60):
+        self.posted.append((path, body))
+        return self.responses.get(path, {})
+
+
+def test_queue_posts_prompt_with_client_id():
+    c = FakeComfy({"/prompt": {"prompt_id": "p1"}})
+    assert c.queue({"1": {}}, client_id="cid") == "p1"
+    path, body = c.posted[-1]
+    assert path == "/prompt"
+    assert body["prompt"] == {"1": {}}
+    assert body["client_id"] == "cid"
+
+
+def test_queue_raises_on_validation_error():
+    c = FakeComfy({"/prompt": {"error": {"message": "bad node"}}})
+    with pytest.raises(ComfyUIError, match="bad node"):
+        c.queue({"1": {}}, client_id="cid")
+
+
+def test_queue_error_includes_node_errors_when_present():
+    """A bare 'Prompt outputs failed validation' names nothing actionable --
+    node_errors is where ComfyUI actually says which node and why."""
+    c = FakeComfy({
+        "/prompt": {
+            "error": {"message": "Prompt outputs failed validation"},
+            "node_errors": {"7": {"errors": ["seed out of range"]}},
+        }
+    })
+    with pytest.raises(ComfyUIError, match="7"):
+        c.queue({"1": {}}, client_id="cid")
+
+
+def test_history_returns_none_while_pending():
+    c = FakeComfy({"/history/p1": {}})
+    assert c.history("p1") is None
+
+
+def test_history_returns_entry_when_complete():
+    c = FakeComfy({"/history/p1": {"p1": {"outputs": {"5": {"images": []}}}}})
+    assert c.history("p1") == {"outputs": {"5": {"images": []}}}
+
+
+def test_outputs_of_collects_images_and_videos():
+    hist = {
+        "p1": {
+            "outputs": {
+                "5": {"images": [{"filename": "a.png", "subfolder": "", "type": "output"}]},
+                "6": {"videos": [{"filename": "b.mp4", "subfolder": "v", "type": "output"}]},
+            }
+        }
+    }
+    c = FakeComfy({"/history/p1": hist})
+    names = sorted(e["filename"] for e in c.outputs_of("p1"))
+    assert names == ["a.png", "b.mp4"]
+
+
+def test_outputs_of_ignores_non_file_output_keys():
+    hist = {"p1": {"outputs": {"7": {"text": ["hello"]}}}}
+    c = FakeComfy({"/history/p1": hist})
+    assert c.outputs_of("p1") == []
+
+
+def test_view_url_encodes_subfolder_and_type():
+    c = ComfyUI("http://127.0.0.1:8188")
+    url = c.view_url({"filename": "a b.png", "subfolder": "sub dir", "type": "output"})
+    assert "filename=a+b.png" in url or "filename=a%20b.png" in url
+    assert "subfolder=sub+dir" in url or "subfolder=sub%20dir" in url
+    assert "type=output" in url
+
+
+# --- upload_image / download -------------------------------------------------
+
+
+def test_upload_image_returns_server_reported_name(monkeypatch, tmp_path):
+    """The server's reported name -- not the local filename -- is what a
+    caller must patch into a graph (dedup can rename it)."""
+    f = tmp_path / "cat.png"
+    f.write_bytes(b"fake-image-bytes")
+    captured = {}
+
+    def fake_urlopen(req, timeout=None):
+        captured["req"] = req
+        return FakeResponse({"name": "cat_00001_.png", "subfolder": "", "type": "input"})
+
+    monkeypatch.setattr(comfyui_mod.urllib.request, "urlopen", fake_urlopen)
+
+    name = ComfyUI("http://127.0.0.1:8188").upload_image(f)
+
+    assert name == "cat_00001_.png"
+    req = captured["req"]
+    assert req.full_url == "http://127.0.0.1:8188/upload/image"
+    assert req.get_method() == "POST"
+    assert b"fake-image-bytes" in req.data
+    assert b'name="image"' in req.data  # same field name works for video, verified live
+
+
+def test_upload_image_prefixes_server_reported_subfolder(monkeypatch, tmp_path):
+    """Confirms the /upload/image round-trip for a NON-image file (video),
+    since LoadVideo's input is patched with this same method's return value."""
+    f = tmp_path / "clip.mp4"
+    f.write_bytes(b"video-bytes")
+    monkeypatch.setattr(
+        comfyui_mod.urllib.request, "urlopen",
+        lambda req, timeout=None: FakeResponse(
+            {"name": "clip.mp4", "subfolder": "uploads", "type": "input"}
+        ),
+    )
+    name = ComfyUI("http://127.0.0.1:8188").upload_image(f)
+    assert name == "uploads/clip.mp4"
+
+
+def test_upload_image_raises_when_server_returns_no_name(monkeypatch, tmp_path):
+    f = tmp_path / "x.png"
+    f.write_bytes(b"x")
+    monkeypatch.setattr(
+        comfyui_mod.urllib.request, "urlopen",
+        lambda req, timeout=None: FakeResponse({}),
+    )
+    with pytest.raises(ComfyUIError, match="no name"):
+        ComfyUI("http://127.0.0.1:8188").upload_image(f)
+
+
+def test_download_writes_response_bytes_to_dest_dir(monkeypatch, tmp_path):
+    class FakeBinaryResponse:
+        def __init__(self, data):
+            self._data = data
+
+        def read(self, n=-1):
+            data, self._data = self._data, b""
+            return data
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc):
+            return False
+
+    monkeypatch.setattr(
+        comfyui_mod.urllib.request, "urlopen",
+        lambda url, timeout=None: FakeBinaryResponse(b"the-actual-file-bytes"),
+    )
+
+    dest_dir = tmp_path / "out" / "nested"  # must be created, not pre-existing
+    path = ComfyUI("http://127.0.0.1:8188").download(
+        {"filename": "a.png", "subfolder": "", "type": "output"}, dest_dir
+    )
+
+    assert path == dest_dir / "a.png"
+    assert path.read_bytes() == b"the-actual-file-bytes"

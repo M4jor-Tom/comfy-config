@@ -1,0 +1,5 @@
+mode: i2v
+prompt: "the fox turns its head slowly toward the camera"
+count: 1
+size: [512, 288]
+input: ../out/2026-09-29-a-red-fox-in-a-misty-pine-forest-cinemat/t2i_00002_.png

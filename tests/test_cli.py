@@ -7,9 +7,10 @@ import pytest
 
 import comfy_runpod.cli as cli
 from comfy_runpod.comfyui import ComfyUIError
-from comfy_runpod.config import ConfigError, GpuChoice, Infra, read_state, write_state
+from comfy_runpod.config import ConfigError, GpuChoice, Infra, Run, read_state, write_state
 from comfy_runpod.runpod_api import RunpodError
 from comfy_runpod.tunnel import TunnelError
+from comfy_runpod.workflow import WorkflowError
 
 BLACKWELL = GpuChoice(id="NVIDIA RTX PRO 4500 Blackwell", template="wgd3p4n4o6")
 ADA = GpuChoice(id="NVIDIA GeForce RTX 4090", template="cw3nka7d08")
@@ -80,6 +81,9 @@ class FakeTunnel:
     @property
     def url(self):
         return f"http://127.0.0.1:{self.local_port}"
+
+    def close(self):
+        self.entered = False
 
 
 class FakeComfy:
@@ -565,3 +569,288 @@ def test_up_down_status_are_registered_in_the_dispatch_table():
     assert cli.handlers["up"] is cli.cmd_up
     assert cli.handlers["down"] is cli.cmd_down
     assert cli.handlers["status"] is cli.cmd_status
+
+
+# --- cmd_run -----------------------------------------------------------------
+
+
+class FakeRunComfy:
+    """Stands in for comfyui.ComfyUI in cmd_run tests: enough control over
+    queue/history/outputs_of/download to prove the batch loop's behaviour
+    (incremental download, a named per-job failure) without any real HTTP."""
+
+    last_instance = None
+
+    def __init__(self, base_url):
+        self.base_url = base_url
+        self.uploaded = []
+        self.queued = []       # [(graph, client_id), ...] -- successful queue() calls only
+        self.downloaded = []   # [Path, ...]
+        self.fail_on_job = None       # 1-based index at which queue() raises
+        self.fail_message = "boom"
+        FakeRunComfy.last_instance = self
+
+    def wait_ready(self, timeout=900):
+        return {"system": {}}
+
+    def upload_image(self, path):
+        self.uploaded.append(path)
+        return f"server-{path.name}"
+
+    def queue(self, graph, client_id):
+        job_n = len(self.queued) + 1
+        if self.fail_on_job == job_n:
+            raise ComfyUIError(self.fail_message)
+        self.queued.append((graph, client_id))
+        return f"prompt-{job_n}"
+
+    def history(self, prompt_id):
+        return {"outputs": {}}  # always "done" immediately -- no polling wait in tests
+
+    def outputs_of(self, prompt_id):
+        return [{"filename": f"{prompt_id}.png", "subfolder": "", "type": "output"}]
+
+    def download(self, entry, dest_dir):
+        path = dest_dir / entry["filename"]
+        self.downloaded.append(path)
+        return path
+
+
+def _run(**over):
+    base = dict(mode="t2i", prompt="a fox in a forest", negative="blurry",
+                count=3, size=(1024, 1024), seed=100, input=None, overrides={})
+    base.update(over)
+    return Run(**base)
+
+
+def _patch_workflow(monkeypatch):
+    """cmd_run's own orchestration is under test here, not workflow.py's
+    internals (already covered exhaustively in test_workflow.py) -- so
+    load/apply_run are faked to avoid needing real graph files under a
+    chdir'd tmp_path, while seeds_for is left real (pure, no I/O) so
+    per-job seed distinctness is proven against the actual implementation."""
+    monkeypatch.setattr(cli.workflow, "load", lambda path: {"graph": True})
+    monkeypatch.setattr(
+        cli.workflow, "apply_run",
+        lambda graph, run, seed, uploaded_name=None: {"seed": seed, "uploaded": uploaded_name},
+    )
+
+
+def test_cmd_run_rejects_invalid_run_file_before_any_pod_work(monkeypatch, tmp_path):
+    monkeypatch.chdir(tmp_path)
+    bad = tmp_path / "bad.yaml"
+    bad.write_text("mode: t2x\nprompt: x\ncount: 1\n")
+    client = FakeCliClient()
+    monkeypatch.setattr(cli, "_client", lambda: client)
+
+    with pytest.raises(ConfigError):
+        cli.cmd_run(argparse.Namespace(run_file=str(bad), keep=True))
+
+    assert client.calls == []       # _client() was never even reached
+    assert read_state() == {}       # no pod ever tracked
+
+
+def test_cmd_run_reuses_an_existing_pod_without_bringing_up_a_new_one(monkeypatch, tmp_path):
+    monkeypatch.chdir(tmp_path)
+    write_state({"pod_id": "pod-live", "tunnel_pid": 111, "tunnel_port": 8188})
+    _patch_workflow(monkeypatch)
+    FakeTunnel.last_instance = None
+    client = FakeCliClient(pod_id="pod-live")
+    monkeypatch.setattr(cli, "load_infra", lambda path: _infra())
+    monkeypatch.setattr(cli, "load_run", lambda path: _run(count=1))
+    monkeypatch.setattr(cli, "_client", lambda: client)
+    monkeypatch.setattr(cli, "ComfyUI", FakeRunComfy)
+    monkeypatch.setattr(cli, "Tunnel", FakeTunnel)
+
+    rc = cli.cmd_run(argparse.Namespace(run_file="run.yaml", keep=True))
+
+    assert rc == 0
+    assert "create_pod" not in client.calls
+    assert "pick_gpu" not in client.calls
+    assert FakeTunnel.last_instance is None   # reused state's tunnel -- never opened a new one
+
+
+def test_cmd_run_opens_a_fresh_tunnel_when_none_is_recorded(monkeypatch, tmp_path):
+    """A pod with no tunnel yet in state (e.g. `_bring_up` just created it)
+    must still get one -- the reuse path is only for a tunnel that is
+    actually recorded."""
+    monkeypatch.chdir(tmp_path)
+    write_state({"pod_id": "pod-live"})  # pod exists, no tunnel_port
+    _patch_workflow(monkeypatch)
+    FakeTunnel.last_instance = None
+    client = FakeCliClient(pod_id="pod-live")
+    monkeypatch.setattr(cli, "load_infra", lambda path: _infra())
+    monkeypatch.setattr(cli, "load_run", lambda path: _run(count=1))
+    monkeypatch.setattr(cli, "_client", lambda: client)
+    monkeypatch.setattr(cli, "ComfyUI", FakeRunComfy)
+    monkeypatch.setattr(cli, "Tunnel", FakeTunnel)
+
+    rc = cli.cmd_run(argparse.Namespace(run_file="run.yaml", keep=True))
+
+    assert rc == 0
+    assert FakeTunnel.last_instance is not None
+    assert FakeTunnel.last_instance.entered is True
+    # persisted so a later `comfy down` can find and close it, like `comfy up` does
+    assert read_state()["tunnel_pid"] == FakeTunnel.last_instance.pid
+    assert read_state()["tunnel_port"] == FakeTunnel.last_instance.local_port
+
+
+def test_cmd_run_applies_a_distinct_seed_to_each_job_in_the_batch(monkeypatch, tmp_path):
+    """Regression guard: a prior bug applied no per-image seed at all, so an
+    entire batch came back as identical images."""
+    monkeypatch.chdir(tmp_path)
+    write_state({"pod_id": "pod-live", "tunnel_port": 8188})
+    _patch_workflow(monkeypatch)
+    client = FakeCliClient(pod_id="pod-live")
+    monkeypatch.setattr(cli, "load_infra", lambda path: _infra())
+    monkeypatch.setattr(cli, "load_run", lambda path: _run(count=3, seed=100))
+    monkeypatch.setattr(cli, "_client", lambda: client)
+    monkeypatch.setattr(cli, "ComfyUI", FakeRunComfy)
+    monkeypatch.setattr(cli, "Tunnel", FakeTunnel)
+
+    cli.cmd_run(argparse.Namespace(run_file="run.yaml", keep=True))
+
+    seeds_used = [g["seed"] for g, _cid in FakeRunComfy.last_instance.queued]
+    assert seeds_used == [100, 101, 102]   # workflow.seeds_for's real fixed-seed increment
+    assert len(set(seeds_used)) == 3       # -- and genuinely distinct
+
+
+def test_cmd_run_uploads_input_once_and_threads_the_server_name_into_every_job(
+    monkeypatch, tmp_path
+):
+    """The server-reported name (which can differ from the local filename)
+    must reach every job, not the local filename -- and the upload itself
+    happens once per batch, not once per job."""
+    monkeypatch.chdir(tmp_path)
+    write_state({"pod_id": "pod-live", "tunnel_port": 8188})
+    _patch_workflow(monkeypatch)
+    img = tmp_path / "cat.png"
+    img.write_bytes(b"x")
+    client = FakeCliClient(pod_id="pod-live")
+    monkeypatch.setattr(cli, "load_infra", lambda path: _infra())
+    monkeypatch.setattr(cli, "load_run", lambda path: _run(mode="i2v", count=2, input=img))
+    monkeypatch.setattr(cli, "_client", lambda: client)
+    monkeypatch.setattr(cli, "ComfyUI", FakeRunComfy)
+    monkeypatch.setattr(cli, "Tunnel", FakeTunnel)
+
+    cli.cmd_run(argparse.Namespace(run_file="run.yaml", keep=True))
+
+    comfy = FakeRunComfy.last_instance
+    assert comfy.uploaded == [img]
+    uploaded_names = [g["uploaded"] for g, _cid in comfy.queued]
+    assert uploaded_names == ["server-cat.png", "server-cat.png"]
+
+
+def test_cmd_run_keeps_completed_downloads_and_names_the_failed_job(monkeypatch, tmp_path):
+    """The core batch-loop requirement: job i failing must not lose jobs
+    1..i-1's already-downloaded output, and the error must say which job
+    failed and why."""
+    monkeypatch.chdir(tmp_path)
+    write_state({"pod_id": "pod-live", "tunnel_port": 8188})
+    _patch_workflow(monkeypatch)
+    client = FakeCliClient(pod_id="pod-live")
+    monkeypatch.setattr(cli, "load_infra", lambda path: _infra())
+    monkeypatch.setattr(cli, "load_run", lambda path: _run(count=3, seed=100))
+    monkeypatch.setattr(cli, "_client", lambda: client)
+
+    def make_comfy(base_url):
+        c = FakeRunComfy(base_url)
+        c.fail_on_job = 2
+        c.fail_message = "GPU out of memory"
+        return c
+
+    monkeypatch.setattr(cli, "ComfyUI", make_comfy)
+    monkeypatch.setattr(cli, "Tunnel", FakeTunnel)
+
+    with pytest.raises(ComfyUIError, match=r"job 2/3.*GPU out of memory"):
+        cli.cmd_run(argparse.Namespace(run_file="run.yaml", keep=True))
+
+    comfy = FakeRunComfy.last_instance
+    assert len(comfy.queued) == 1       # job 2 never got recorded as queued
+    assert len(comfy.downloaded) == 1   # -- but job 1's output was already downloaded
+
+
+def test_cmd_run_converts_a_workflow_error_into_a_clean_message(monkeypatch, tmp_path):
+    """WorkflowError isn't one of main()'s caught types -- cmd_run must not
+    let it escape uncaught, or the user sees a raw traceback instead of
+    `error: ...`."""
+    monkeypatch.chdir(tmp_path)
+    write_state({"pod_id": "pod-live", "tunnel_port": 8188})
+    monkeypatch.setattr(cli.workflow, "load", lambda path: {"graph": True})
+
+    def boom(graph, run, seed, uploaded_name=None):
+        raise WorkflowError("workflow has no node titled 'positive'")
+
+    monkeypatch.setattr(cli.workflow, "apply_run", boom)
+    client = FakeCliClient(pod_id="pod-live")
+    monkeypatch.setattr(cli, "load_infra", lambda path: _infra())
+    monkeypatch.setattr(cli, "load_run", lambda path: _run(count=1))
+    monkeypatch.setattr(cli, "_client", lambda: client)
+    monkeypatch.setattr(cli, "ComfyUI", FakeRunComfy)
+    monkeypatch.setattr(cli, "Tunnel", FakeTunnel)
+
+    with pytest.raises(ComfyUIError, match="no node titled"):
+        cli.cmd_run(argparse.Namespace(run_file="run.yaml", keep=True))
+
+
+def test_cmd_run_terminates_the_pod_by_default_and_clears_state(monkeypatch, tmp_path, capsys):
+    monkeypatch.chdir(tmp_path)
+    write_state({"pod_id": "pod-live", "tunnel_port": 8188, "tunnel_pid": 999})
+    _patch_workflow(monkeypatch)
+    client = FakeCliClient(pod_id="pod-live", spend=0.11)
+    monkeypatch.setattr(cli, "load_infra", lambda path: _infra())
+    monkeypatch.setattr(cli, "load_run", lambda path: _run(count=1))
+    monkeypatch.setattr(cli, "_client", lambda: client)
+    monkeypatch.setattr(cli, "ComfyUI", FakeRunComfy)
+    monkeypatch.setattr(cli, "Tunnel", FakeTunnel)
+    monkeypatch.setattr(cli, "_kill_tunnel", lambda pid, port: None)
+
+    rc = cli.cmd_run(argparse.Namespace(run_file="run.yaml", keep=False))
+
+    assert rc == 0
+    assert client.terminated == ["pod-live"]
+    assert read_state() == {}
+    assert "0.11" in capsys.readouterr().out
+
+
+def test_cmd_run_keeps_the_pod_when_keep_is_passed(monkeypatch, tmp_path):
+    monkeypatch.chdir(tmp_path)
+    write_state({"pod_id": "pod-live", "tunnel_port": 8188})
+    _patch_workflow(monkeypatch)
+    client = FakeCliClient(pod_id="pod-live")
+    monkeypatch.setattr(cli, "load_infra", lambda path: _infra())
+    monkeypatch.setattr(cli, "load_run", lambda path: _run(count=1))
+    monkeypatch.setattr(cli, "_client", lambda: client)
+    monkeypatch.setattr(cli, "ComfyUI", FakeRunComfy)
+    monkeypatch.setattr(cli, "Tunnel", FakeTunnel)
+
+    rc = cli.cmd_run(argparse.Namespace(run_file="run.yaml", keep=True))
+
+    assert rc == 0
+    assert client.terminated == []
+    assert read_state()["pod_id"] == "pod-live"
+
+
+def test_cmd_run_output_dir_is_dated_and_slugged_from_the_prompt(monkeypatch, tmp_path):
+    monkeypatch.chdir(tmp_path)
+    write_state({"pod_id": "pod-live", "tunnel_port": 8188})
+    _patch_workflow(monkeypatch)
+    client = FakeCliClient(pod_id="pod-live")
+    monkeypatch.setattr(cli, "load_infra", lambda path: _infra())
+    monkeypatch.setattr(
+        cli, "load_run", lambda path: _run(count=1, prompt="A Red Fox!! In the Snow")
+    )
+    monkeypatch.setattr(cli, "_client", lambda: client)
+    monkeypatch.setattr(cli, "ComfyUI", FakeRunComfy)
+    monkeypatch.setattr(cli, "Tunnel", FakeTunnel)
+
+    cli.cmd_run(argparse.Namespace(run_file="run.yaml", keep=True))
+
+    [saved] = FakeRunComfy.last_instance.downloaded
+    assert saved.parent.parent.name == "out"
+    assert saved.parent.name.endswith("a-red-fox-in-the-snow")
+    assert saved.parent.name.startswith(cli.date.today().isoformat())
+
+
+def test_run_is_registered_in_the_dispatch_table():
+    assert cli.handlers["run"] is cli.cmd_run
