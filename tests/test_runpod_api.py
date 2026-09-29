@@ -179,19 +179,48 @@ def test_ssh_target_raises_while_runtime_is_null():
         Client("k", transport=t).ssh_target("pod1")
 
 
-def test_ssh_target_raises_when_no_tcp_22_mapping():
+def test_ssh_target_raises_when_port_22_not_exposed():
     pod = {"runtime": {"ports": [{"private": 8188, "public": 1, "ip": "1.2.3.4", "type": "http"}]}}
     t = FakeTransport({"/pods/pod1": pod})
     with pytest.raises(RunpodError, match="22/tcp"):
         Client("k", transport=t).ssh_target("pod1")
 
 
-def test_pod_spend_sums_billing_records():
-    billing = {"records": [{"amount": 0.21}, {"amount": 0.09}]}
+def test_ssh_target_raises_when_port_22_has_no_public_mapping():
+    pod = {"runtime": {"ports": [{"private": 22, "public": None, "ip": "1.2.3.4", "type": "tcp"}]}}
+    t = FakeTransport({"/pods/pod1": pod})
+    with pytest.raises(RunpodError, match="22/tcp"):
+        Client("k", transport=t).ssh_target("pod1")
+
+
+def test_pod_spend_reads_total_amount_from_metadata():
+    billing = {
+        "metadata": {
+            "query": {"bucketSize": "day", "endTime": "...", "podId": "pod1", "startTime": "..."},
+            "recordCount": 2,
+            "totals": {"cpuAmount": 0.09, "diskAmount": 0, "gpuAmount": 0.21, "totalAmount": 0.30},
+            "uniquePodCount": 1,
+        },
+        "records": [{"timestamp": "..."}, {"timestamp": "..."}],
+    }
     t = FakeTransport({"/billing/pods": billing})
     assert Client("k", transport=t).pod_spend("pod1") == pytest.approx(0.30)
 
 
-def test_pod_spend_returns_none_when_unavailable():
+def test_pod_spend_returns_zero_when_no_charges():
+    billing = {
+        "metadata": {
+            "query": {"bucketSize": "day", "endTime": "...", "podId": "pod1", "startTime": "..."},
+            "recordCount": 0,
+            "totals": {"cpuAmount": 0, "diskAmount": 0, "gpuAmount": 0, "totalAmount": 0},
+            "uniquePodCount": 0,
+        },
+        "records": [],
+    }
+    t = FakeTransport({"/billing/pods": billing})
+    assert Client("k", transport=t).pod_spend("pod1") == pytest.approx(0.0)
+
+
+def test_pod_spend_returns_none_when_metadata_missing():
     t = FakeTransport({"/billing/pods": {}})
     assert Client("k", transport=t).pod_spend("pod1") is None

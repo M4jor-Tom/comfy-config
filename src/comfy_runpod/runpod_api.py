@@ -107,7 +107,7 @@ class Client:
         name: str,
         template_id: str | None,
         datacenter: str,
-        volume_id: str,
+        volume_id: str | None,
         gpu_id: str | None = None,
         cpu: dict | None = None,
     ) -> dict:
@@ -162,7 +162,7 @@ class Client:
             out = self._call("GET", f"/billing/pods?podId={pod_id}")
         except RunpodError:
             return None
-        records = out.get("records")
-        if not records:
+        totals = out.get("metadata", {}).get("totals")
+        if not totals:
             return None
-        return sum(float(r.get("amount", 0.0)) for r in records)
+        return float(totals.get("totalAmount", 0.0))
