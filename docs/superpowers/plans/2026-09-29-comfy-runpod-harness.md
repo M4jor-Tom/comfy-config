@@ -571,7 +571,7 @@ correct before Task 4 spends money.
   - `Client(api_key: str, transport: Callable[[str, str, dict | None], dict] | None = None)`.
   - `Client.pick_gpu(gpus: list[GpuChoice], datacenter: str) -> tuple[GpuChoice, str]` — returns the first choice with availability other than `NONE` in that datacenter, plus the availability level. Raises `RunpodError` if none.
   - `Client.create_volume(name: str, size_gb: int, datacenter: str) -> str` — returns volume id.
-  - `Client.create_pod(*, name, template_id, datacenter, volume_id, gpu_id=None, cpu=None) -> dict` — exactly one of `gpu_id`/`cpu`.
+  - `Client.create_pod(*, name, template_id, datacenter, volume_id, gpu_id=None, cpu=None) -> dict` — exactly one of `gpu_id`/`cpu`. `volume_id` accepts `None`, which omits `mounts` entirely so a volume-less pod can be created (see the volume-optional note below).
   - `Client.get_pod(pod_id: str) -> dict`.
   - `Client.terminate_pod(pod_id: str) -> None`.
   - `Client.pod_spend(pod_id: str) -> float | None` — real billed USD, `None` if unavailable.
@@ -717,6 +717,18 @@ def test_create_pod_rejects_neither_gpu_nor_cpu():
         Client("k", transport=t).create_pod(
             name="x", template_id=None, datacenter="EU-RO-1", volume_id="v",
         )
+
+
+def test_create_pod_omits_mounts_when_no_volume():
+    """The harness must still work for a user who keeps no standing volume."""
+    t = FakeTransport({"/pods": {"id": "pod1"}})
+    Client("k", transport=t).create_pod(
+        name="comfy", template_id="2lv7ev3wfp", datacenter="EU-RO-1",
+        volume_id=None, gpu_id=BLACKWELL.id,
+    )
+    _, _, body = t.calls[-1]
+    assert "mounts" not in body
+    assert body["ports"] == ["22/tcp"]
 
 
 def test_create_volume_body_shape():
@@ -899,10 +911,11 @@ class Client:
             "dataCenterIds": [datacenter],
             "ports": ["22/tcp"],  # 8188 is reached over the tunnel, never exposed
             "startSsh": True,
-            "mounts": {
-                "network": [{"volumeId": volume_id, "path": VOLUME_MOUNT_PATH}]
-            },
         }
+        if volume_id:
+            body["mounts"] = {
+                "network": [{"volumeId": volume_id, "path": VOLUME_MOUNT_PATH}]
+            }
         if gpu_id:
             body["gpu"] = {"id": gpu_id, "count": 1}
             body["templateId"] = template_id
@@ -2345,6 +2358,115 @@ Merge the feature branch with `--no-ff` per CLAUDE.md gitflow.
 
 ---
 
+### Task 10: Teardown — leave nothing billing
+
+The user asked that no recurring charge survive this session. Terminating a pod is routine;
+**deleting the volume destroys 48.7 GB of downloaded models irreversibly, so it stops and
+asks** rather than being done automatically.
+
+**Files:**
+- Modify: `src/comfy_runpod/cli.py`
+- Modify: `README.md`
+
+**Interfaces:**
+- Consumes: `runpod_api.Client`.
+- Produces: `Client.list_pods() -> list[dict]`, `Client.list_volumes() -> list[dict]`, `Client.delete_volume(volume_id: str) -> None`, and a `comfy teardown` subcommand.
+
+- [ ] **Step 1: Add the three client methods**
+
+```python
+    def list_pods(self) -> list[dict]:
+        return list(self._call("GET", "/pods").get("pods") or [])
+
+    def list_volumes(self) -> list[dict]:
+        out = self._call("GET", "/network-volumes")
+        return list(out.get("networkVolumes") or out.get("volumes") or [])
+
+    def delete_volume(self, volume_id: str) -> None:
+        """Irreversible. Every model on the volume is lost."""
+        self._call("DELETE", f"/network-volumes/{volume_id}")
+```
+
+`_http` already takes a method string, so `DELETE` needs no new plumbing. If the live
+response nests volumes under a different key, fix `list_volumes` to match what the API
+actually returns and note it in the report.
+
+- [ ] **Step 2: Add `comfy teardown`**
+
+Register a `teardown` subparser with `--delete-volume` (default `False`), and a handler
+that terminates every running pod unconditionally, then reports each volume with its size
+and monthly cost. It deletes a volume **only** when `--delete-volume` is passed, and
+prints the consequence first:
+
+```python
+def cmd_teardown(args) -> int:
+    client = _client()
+    pods = client.list_pods()
+    for pod in pods:
+        print(f"terminating {pod['id']} ({pod.get('name', '?')})")
+        client.terminate_pod(pod["id"])
+    clear_state()
+    if not pods:
+        print("no pods running")
+
+    volumes = client.list_volumes()
+    if not volumes:
+        print("no volumes — nothing is billing")
+        return 0
+    for v in volumes:
+        size = v.get("size", 0)
+        print(f"volume {v.get('id')}  {size} GB  ~${size * 0.07:.2f}/month")
+    if not args.delete_volume:
+        print("\nVolumes still bill monthly. `comfy teardown --delete-volume` removes "
+              "them — that destroys every downloaded model and cannot be undone.")
+        return 0
+    for v in volumes:
+        print(f"deleting {v.get('id')} — models are gone")
+        client.delete_volume(str(v["id"]))
+    return 0
+```
+
+- [ ] **Step 3: Verify pods are gone without deleting anything**
+
+Run: `nix develop -c comfy teardown`
+Expected: every pod terminated, each volume listed with its monthly cost, and **no
+deletion**. Exit 0.
+
+- [ ] **Step 4: 🛑 STOP — ask before deleting the volume**
+
+Deleting the volume is irreversible and forfeits ~$0.15 of download plus 54 minutes of
+wall clock to redo. Present the choice and wait:
+
+- **Keep it** — $5.25/month standing, every future `comfy up` ready in ~3 min.
+- **Delete it** — $0/month, and the next session re-runs `comfy provision`.
+
+Run `comfy teardown --delete-volume` only on an explicit yes.
+
+- [ ] **Step 5: Confirm the end state**
+
+```bash
+nix develop -c comfy teardown
+```
+Expected: `no pods running` and either the volume listed, or `no volumes — nothing is
+billing`. Whichever it is, state it plainly in the final report.
+
+- [ ] **Step 6: Commit**
+
+```bash
+git add src/comfy_runpod/cli.py README.md
+git commit -m "feat(cli): teardown command to stop all billing"
+```
+
+---
+
+## Volume-optional operation
+
+`create_pod` accepts `volume_id=None` and omits `mounts`. This is load-bearing, not
+defensive: the session is expected to end with the volume deleted, and a harness that
+could only run *with* a volume would be unusable in exactly that state. A volume-less run
+re-downloads models on each boot — slower and, on a bad host, much slower, but it works
+and costs nothing while idle.
+
 ## Self-Review
 
 **Spec coverage:**
@@ -2364,6 +2486,8 @@ Merge the feature branch with `--no-ff` per CLAUDE.md gitflow.
 | §11 flake | 1, verified again in 9 |
 | §12 verification | 4.7, 5.6, 5.7, 6.6, 8.7, 8.8, 9 |
 | §13.4 umt5 fp8 vs fp16 | 6.6 |
+| User request: no recurring charge left at the end | 10 |
+| Volume-optional operation (follows from Task 10) | 3, and the note above |
 
 No gaps found.
 
@@ -2391,4 +2515,5 @@ Task 5 must extend that same `handlers` dict rather than rewriting `main`.
 | 5 pod boot | ~$0.10 | — |
 | 6 workflow export | ~$0.20 | — |
 | 8 run verification | ~$0.30 | — |
-| **Total to working** | **~$0.75** | **$5.25/month** |
+| 10 teardown | $0 | **$0 if volume deleted** |
+| **Total to working** | **~$0.75** | **$5.25/month, or $0 after teardown** |
