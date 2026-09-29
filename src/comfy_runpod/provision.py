@@ -112,10 +112,22 @@ def provision(client: Client, infra: Infra, volume_size_gb: int = 75) -> str:
     if volume_id:
         print(f"reusing existing volume {volume_id}")
     else:
-        volume_id = client.create_volume(
-            "comfy-models", volume_size_gb, infra.datacenter
+        # A create_volume() POST that lands server-side but whose response never
+        # arrives (timeout/URLError) leaves an unrecorded volume that costs
+        # $5.25/month. Look before creating so a retry after that finds it instead
+        # of doubling it.
+        volume_id = next(
+            (str(v["id"]) for v in client.list_volumes()
+             if v.get("name") == "comfy-models" and v.get("id")),
+            None,
         )
-        print(f"created volume {volume_id} ({volume_size_gb} GB) — PUT THIS IN comfy.yaml")
+        if volume_id:
+            print(f"found existing volume {volume_id} named comfy-models — reusing it")
+        else:
+            volume_id = client.create_volume(
+                "comfy-models", volume_size_gb, infra.datacenter
+            )
+            print(f"created volume {volume_id} ({volume_size_gb} GB) — PUT THIS IN comfy.yaml")
 
     pod = client.create_pod(
         name="comfy-provision",

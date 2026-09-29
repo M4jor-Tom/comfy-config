@@ -185,6 +185,25 @@ def test_create_volume_body_shape():
     assert body == {"name": "comfy-models", "size": 75, "dataCenter": "EU-RO-1"}
 
 
+def test_list_volumes_returns_the_network_volumes_key():
+    t = FakeTransport(
+        {"/network-volumes": {"networkVolumes": [{"id": "v1", "name": "comfy-models"}]}}
+    )
+    vols = Client("k", transport=t).list_volumes()
+    assert vols == [{"id": "v1", "name": "comfy-models"}]
+    assert t.calls[-1] == ("GET", "/network-volumes", None)
+
+
+def test_list_volumes_falls_back_to_a_plain_volumes_key():
+    t = FakeTransport({"/network-volumes": {"volumes": [{"id": "v2"}]}})
+    assert Client("k", transport=t).list_volumes() == [{"id": "v2"}]
+
+
+def test_list_volumes_returns_empty_list_when_neither_key_present():
+    t = FakeTransport({"/network-volumes": {}})
+    assert Client("k", transport=t).list_volumes() == []
+
+
 def test_terminate_uses_action_endpoint():
     t = FakeTransport({})
     Client("k", transport=t).terminate_pod("pod1")

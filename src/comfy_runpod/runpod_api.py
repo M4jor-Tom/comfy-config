@@ -105,6 +105,10 @@ class Client:
             raise RunpodError(f"volume create returned no id: {out}")
         return str(vid)
 
+    def list_volumes(self) -> list[dict]:
+        out = self._call("GET", "/network-volumes")
+        return list(out.get("networkVolumes") or out.get("volumes") or [])
+
     # --- pods ------------------------------------------------------------
 
     def create_pod(
