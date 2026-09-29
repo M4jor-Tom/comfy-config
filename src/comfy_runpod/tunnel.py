@@ -39,7 +39,6 @@ class Tunnel:
         self.user = user
         self.local_port = local_port
         self._proc: subprocess.Popen | None = None
-        self._log_path = LOG_PATH
 
     @property
     def url(self) -> str:
@@ -66,7 +65,7 @@ class Tunnel:
         ]
 
     def __enter__(self) -> Tunnel:
-        log = open(self._log_path, "wb")  # truncate: no stale content from a past run
+        log = open(LOG_PATH, "wb")  # truncate: no stale content from a past run
         try:
             self._proc = subprocess.Popen(
                 self.ssh_command(),
@@ -96,7 +95,7 @@ class Tunnel:
 
     def _read_log(self) -> str:
         try:
-            text = self._log_path.read_text(errors="replace").strip()
+            text = LOG_PATH.read_text(errors="replace").strip()
         except OSError:
             return "(no log)"
         return text[-400:] if text else "(ssh wrote nothing to stderr)"
@@ -107,7 +106,7 @@ class Tunnel:
             if self._proc and self._proc.poll() is not None:
                 raise TunnelError(
                     f"ssh exited immediately with code {self._proc.returncode}: "
-                    f"{self._read_log()} (full log: {self._log_path})"
+                    f"{self._read_log()} (full log: {LOG_PATH})"
                 )
             with socket.socket() as s:
                 s.settimeout(2)
@@ -117,5 +116,5 @@ class Tunnel:
         self.close()
         raise TunnelError(
             f"port {self.local_port} never opened. Is something already using "
-            f"it? ssh log: {self._read_log()} (full log: {self._log_path})"
+            f"it? ssh log: {self._read_log()} (full log: {LOG_PATH})"
         )

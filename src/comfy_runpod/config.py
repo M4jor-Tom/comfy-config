@@ -62,13 +62,8 @@ def _duration_seconds(path: Path, value: object) -> int:
         return value
     text = str(value).strip()
     mult = _UNITS.get(text[-1:], None)
-    if mult is None:
-        try:
-            return int(text)
-        except ValueError as e:
-            raise ConfigError(f"{path}: terminate_after {value!r} is not a duration") from e
     try:
-        return int(text[:-1]) * mult
+        return int(text) if mult is None else int(text[:-1]) * mult
     except ValueError as e:
         raise ConfigError(f"{path}: terminate_after {value!r} is not a duration") from e
 
@@ -172,6 +167,15 @@ def read_state() -> dict:
 
 def write_state(d: dict) -> None:
     state_path().write_text(json.dumps(d, indent=2))
+
+
+def merge_state(**fields: object) -> None:
+    """Read, update, and write .comfy-state.json in one call -- the usual
+    read-mutate-write sequence for adding a couple of fields (e.g.
+    tunnel_pid/tunnel_port) onto whatever state already exists."""
+    state = read_state()
+    state.update(fields)
+    write_state(state)
 
 
 def clear_state() -> None:

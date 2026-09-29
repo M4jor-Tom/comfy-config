@@ -6,6 +6,7 @@ from comfy_runpod.config import MODES, Infra
 from comfy_runpod.runpod_api import RunpodError
 import comfy_runpod.provision as provision_mod
 from comfy_runpod.provision import MODEL_FILES, render_download_script, total_gb
+from tests.conftest import FakeRunpodClient
 
 _MODE_MODEL_SET = {
     "t2i": {"z_image_bf16.safetensors", "qwen_3_4b.safetensors", "ae.safetensors"},
@@ -91,47 +92,13 @@ def test_script_verifies_sizes_rather_than_trusting_exit_code():
     assert re.search(r'if \[ "\$actual" -lt \d+ \]; then\n\s*echo "FAIL:[^\n]*exit 1', s)
 
 
-class FakeProvisionClient:
-    """Stands in for runpod_api.Client in provision() tests: same method names
-    (create_volume, create_pod, terminate_pod, ssh_target, list_volumes), no network."""
-
-    def __init__(self, *, volumes=None, pod_id="pod-fake"):
-        self.volumes = list(volumes or [])
-        self.pod_id = pod_id
-        self.calls: list[str] = []
-        self.terminated: list[str] = []
-
-    def list_volumes(self):
-        self.calls.append("list_volumes")
-        return self.volumes
-
-    def create_volume(self, name, size_gb, datacenter):
-        self.calls.append("create_volume")
-        return "vol-created"
-
-    def create_pod(self, *, name, template_id, datacenter, volume_id, gpu_id=None, cpu=None):
-        # Keyword-only with the same names as the real Client.create_pod, on
-        # purpose: a misspelled/renamed kwarg at the call site must raise
-        # TypeError here too, not just against the real client.
-        self.calls.append("create_pod")
-        return {"id": self.pod_id}
-
-    def ssh_target(self, pod_id):
-        self.calls.append("ssh_target")
-        return ("1.2.3.4", 2222, "root")
-
-    def terminate_pod(self, pod_id):
-        self.calls.append("terminate_pod")
-        self.terminated.append(pod_id)
-
-
 def _infra(volume_id=None):
     return Infra(datacenter="EU-RO-1", gpus=[], volume_id=volume_id)
 
 
 def test_provision_reuses_infras_volume_id_without_creating(monkeypatch):
     monkeypatch.setattr(provision_mod, "_run_download", lambda host, port, user: None)
-    client = FakeProvisionClient()
+    client = FakeRunpodClient()
     result = provision_mod.provision(client, _infra(volume_id="vol-existing"))
     assert result == "vol-existing"
     assert "create_volume" not in client.calls
@@ -142,7 +109,7 @@ def test_provision_finds_existing_volume_by_name_before_creating(monkeypatch):
     """R2 fix: a lost create_volume response must not cause a duplicate $5.25/mo
     volume -- provision must look for one named comfy-models before creating."""
     monkeypatch.setattr(provision_mod, "_run_download", lambda host, port, user: None)
-    client = FakeProvisionClient(volumes=[{"id": "vol-found", "name": "comfy-models"}])
+    client = FakeRunpodClient(volumes=[{"id": "vol-found", "name": "comfy-models"}])
     result = provision_mod.provision(client, _infra(volume_id=None))
     assert result == "vol-found"
     assert "list_volumes" in client.calls
@@ -151,7 +118,7 @@ def test_provision_finds_existing_volume_by_name_before_creating(monkeypatch):
 
 def test_provision_creates_a_volume_only_when_none_exists(monkeypatch):
     monkeypatch.setattr(provision_mod, "_run_download", lambda host, port, user: None)
-    client = FakeProvisionClient(volumes=[{"id": "vol-other", "name": "unrelated"}])
+    client = FakeRunpodClient(volumes=[{"id": "vol-other", "name": "unrelated"}])
     result = provision_mod.provision(client, _infra(volume_id=None))
     assert result == "vol-created"
     assert "list_volumes" in client.calls
@@ -164,7 +131,7 @@ def test_provision_warns_but_proceeds_when_volume_name_is_ambiguous(monkeypatch,
     visible (id + size of every match, monthly billing, `comfy teardown`), and the
     run must still proceed rather than fail."""
     monkeypatch.setattr(provision_mod, "_run_download", lambda host, port, user: None)
-    client = FakeProvisionClient(
+    client = FakeRunpodClient(
         volumes=[
             {"id": "vol-a", "name": "comfy-models", "size": 75},
             {"id": "vol-b", "name": "comfy-models", "size": 75},
@@ -183,7 +150,7 @@ def test_provision_warns_but_proceeds_when_volume_name_is_ambiguous(monkeypatch,
 
 def test_provision_terminates_the_pod_it_created_on_success(monkeypatch):
     monkeypatch.setattr(provision_mod, "_run_download", lambda host, port, user: None)
-    client = FakeProvisionClient(pod_id="pod-77")
+    client = FakeRunpodClient(pod_id="pod-77")
     provision_mod.provision(client, _infra(volume_id="vol-existing"))
     assert client.terminated == ["pod-77"]
 
@@ -193,7 +160,7 @@ def test_provision_terminates_the_pod_even_when_download_fails(monkeypatch):
         raise RunpodError("download exploded")
 
     monkeypatch.setattr(provision_mod, "_run_download", boom)
-    client = FakeProvisionClient(pod_id="pod-88")
+    client = FakeRunpodClient(pod_id="pod-88")
     with pytest.raises(RunpodError, match="download exploded"):
         provision_mod.provision(client, _infra(volume_id="vol-existing"))
     assert client.terminated == ["pod-88"]

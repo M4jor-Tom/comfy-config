@@ -7,6 +7,7 @@ from comfy_runpod.config import (
     ConfigError,
     load_infra,
     load_run,
+    merge_state,
     read_state,
     write_state,
     clear_state,
@@ -160,3 +161,10 @@ def test_state_roundtrip(tmp_path, monkeypatch):
     assert read_state()["pod_id"] == "abc"
     clear_state()
     assert read_state() == {}
+
+
+def test_merge_state_reads_updates_and_writes_in_one_call(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    write_state({"pod_id": "abc"})
+    merge_state(tunnel_pid=123, tunnel_port=8188)
+    assert read_state() == {"pod_id": "abc", "tunnel_pid": 123, "tunnel_port": 8188}

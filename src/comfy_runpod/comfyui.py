@@ -11,6 +11,9 @@ import urllib.parse
 import urllib.request
 from pathlib import Path
 
+# Per-job cap so one stuck render can't hang a whole batch forever.
+_JOB_TIMEOUT = 1800
+
 
 class ComfyUIError(Exception):
     """ComfyUI was unreachable or returned something unusable."""
@@ -27,20 +30,22 @@ class ComfyUI:
         except (urllib.error.URLError, OSError, json.JSONDecodeError) as e:
             raise ComfyUIError(f"GET {path} failed: {e}") from e
 
-    def _post_json(self, path: str, body: dict, timeout: int = 60) -> dict:
-        data = json.dumps(body).encode()
+    def _post(self, path: str, data: bytes, content_type: str, timeout: int) -> dict:
         req = urllib.request.Request(
             f"{self.base}{path}",
             data=data,
             method="POST",
-            headers={"Content-Type": "application/json"},
+            headers={"Content-Type": content_type},
         )
         try:
             with urllib.request.urlopen(req, timeout=timeout) as r:
                 raw = r.read()
-        except (urllib.error.URLError, OSError) as e:
+            return json.loads(raw) if raw else {}
+        except (urllib.error.URLError, OSError, json.JSONDecodeError) as e:
             raise ComfyUIError(f"POST {path} failed: {e}") from e
-        return json.loads(raw) if raw else {}
+
+    def _post_json(self, path: str, body: dict, timeout: int = 60) -> dict:
+        return self._post(path, json.dumps(body).encode(), "application/json", timeout)
 
     def system_stats(self) -> dict:
         return self._get_json("/system_stats")
@@ -56,6 +61,16 @@ class ComfyUI:
                 last = str(e)
                 time.sleep(10)
         raise ComfyUIError(f"ComfyUI not ready within {timeout}s. Last error: {last}")
+
+    def wait_for_history(self, prompt_id: str, timeout: int = _JOB_TIMEOUT) -> None:
+        """Poll /history until this job finishes. ComfyUI has no blocking
+        completion call, so polling is the only option; capped so one stuck
+        render can't hang the rest of the batch forever."""
+        deadline = time.time() + timeout
+        while self.history(prompt_id) is None:
+            if time.time() > deadline:
+                raise ComfyUIError(f"prompt {prompt_id} did not finish within {timeout}s")
+            time.sleep(2)
 
     # --- queueing ----------------------------------------------------------
 
@@ -109,16 +124,11 @@ class ComfyUI:
             b'Content-Disposition: form-data; name="overwrite"\r\n\r\ntrue\r\n',
             f"--{boundary}--\r\n".encode(),
         ])
-        req = urllib.request.Request(
-            f"{self.base}/upload/image",
-            data=payload,
-            method="POST",
-            headers={"Content-Type": f"multipart/form-data; boundary={boundary}"},
-        )
         try:
-            with urllib.request.urlopen(req, timeout=300) as r:
-                out = json.loads(r.read())
-        except (urllib.error.URLError, OSError, json.JSONDecodeError) as e:
+            out = self._post(
+                "/upload/image", payload, f"multipart/form-data; boundary={boundary}", 300
+            )
+        except ComfyUIError as e:
             raise ComfyUIError(f"uploading {path.name} failed: {e}") from e
         name = out.get("name")
         if not name:

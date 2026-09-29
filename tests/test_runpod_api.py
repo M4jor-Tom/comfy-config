@@ -1,9 +1,12 @@
+import inspect
 import urllib.request
 
 import pytest
 
+import comfy_runpod.runpod_api as runpod_api_mod
 from comfy_runpod.config import GpuChoice
 from comfy_runpod.runpod_api import Client, RunpodError, _http
+from tests.conftest import FakeRunpodClient
 
 BLACKWELL = GpuChoice(id="NVIDIA RTX PRO 4500 Blackwell", template="wgd3p4n4o6")
 ADA = GpuChoice(id="NVIDIA GeForce RTX 4090", template="cw3nka7d08")
@@ -290,3 +293,51 @@ def test_pod_spend_returns_zero_when_no_charges():
 def test_pod_spend_returns_none_when_metadata_missing():
     t = FakeTransport({"/billing/pods": {}})
     assert Client("k", transport=t).pod_spend("pod1") is None
+
+
+def test_wait_for_ssh_returns_the_target_once_ready():
+    pod = {
+        "runtime": {"ports": [{"private": 22, "public": 40022, "ip": "1.2.3.4", "type": "tcp"}]},
+    }
+    t = FakeTransport({"/pods/pod1": pod})
+    assert Client("k", transport=t).wait_for_ssh("pod1") == ("1.2.3.4", 40022, "root")
+
+
+def test_wait_for_ssh_gives_up_after_the_timeout(monkeypatch):
+    t = FakeTransport({"/pods/pod1": {"id": "pod1", "runtime": None}})
+    monkeypatch.setattr(runpod_api_mod.time, "sleep", lambda s: None)
+
+    with pytest.raises(RunpodError, match="never exposed SSH"):
+        Client("k", transport=t).wait_for_ssh("pod1", timeout=0)
+
+
+# --- FakeRunpodClient stays honest -----------------------------------------
+#
+# FakeRunpodClient (tests/conftest.py) is a hand-rolled stand-in for Client,
+# shared by test_cli.py and test_provision.py. Comparing signatures directly
+# means a real method's signature drifting out from under the fake (a
+# renamed kwarg, a parameter turning keyword-only, a new required parameter)
+# fails the suite right here instead of every fake-based test quietly
+# continuing to "pass" against a stand-in that no longer matches reality.
+
+_CLIENT_SURFACE = (
+    "pick_gpu", "create_volume", "list_volumes", "delete_volume", "list_pods",
+    "create_pod", "get_pod", "terminate_pod", "ssh_target", "wait_for_ssh",
+    "pod_spend",
+)
+
+
+def _callable_shape(fn):
+    """(name, kind, default) per parameter -- the subset of a signature that
+    determines what call sites are legal, ignoring annotations (which the
+    fake, unlike Client, does not bother repeating)."""
+    return [
+        (p.name, p.kind, p.default) for p in inspect.signature(fn).parameters.values()
+    ]
+
+
+@pytest.mark.parametrize("name", _CLIENT_SURFACE)
+def test_fake_runpod_client_mirrors_the_real_clients_signature(name):
+    real_shape = _callable_shape(getattr(Client, name))
+    fake_shape = _callable_shape(getattr(FakeRunpodClient, name))
+    assert fake_shape == real_shape

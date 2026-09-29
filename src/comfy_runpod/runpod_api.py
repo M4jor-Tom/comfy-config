@@ -8,6 +8,7 @@ Schema: https://api.runpod.io/v2/openapi.json (public, no auth needed).
 from __future__ import annotations
 
 import json
+import time
 import urllib.error
 import urllib.request
 from collections.abc import Callable
@@ -173,6 +174,18 @@ class Client:
             f"pod {pod_id} has no 22/tcp mapping. Ports are fixed at creation — "
             "the pod must be recreated with 22/tcp exposed."
         )
+
+    def wait_for_ssh(self, pod_id: str, timeout: int = 900) -> tuple[str, int, str]:
+        """Poll `ssh_target` until the pod exposes SSH, returning what it
+        found -- so a caller that just waited never has to re-fetch the same
+        (host, port, user) with a second API call."""
+        deadline = time.time() + timeout
+        while time.time() < deadline:
+            try:
+                return self.ssh_target(pod_id)
+            except RunpodError:
+                time.sleep(10)
+        raise RunpodError(f"pod {pod_id} never exposed SSH within {timeout}s")
 
     def pod_spend(self, pod_id: str) -> float | None:
         try:

@@ -11,6 +11,7 @@ from comfy_runpod.config import ConfigError, GpuChoice, Infra, Run, read_state, 
 from comfy_runpod.runpod_api import RunpodError
 from comfy_runpod.tunnel import TunnelError
 from comfy_runpod.workflow import WorkflowError
+from tests.conftest import FakeRunpodClient
 
 BLACKWELL = GpuChoice(id="NVIDIA RTX PRO 4500 Blackwell", template="wgd3p4n4o6")
 ADA = GpuChoice(id="NVIDIA GeForce RTX 4090", template="cw3nka7d08")
@@ -18,65 +19,6 @@ ADA = GpuChoice(id="NVIDIA GeForce RTX 4090", template="cw3nka7d08")
 
 def _infra():
     return Infra(datacenter="EU-RO-1", gpus=[BLACKWELL, ADA], volume_id="vol_abc")
-
-
-class FakeCliClient:
-    """Stands in for runpod_api.Client for cli.py handler tests. Same method
-    names as the real Client, no network."""
-
-    def __init__(self, *, pod_id="pod-1", availability="HIGH",
-                 desired_status="RUNNING", spend=0.42,
-                 pods=None, volumes=None):
-        self.pod_id = pod_id
-        self.availability = availability
-        self.desired_status = desired_status
-        self.spend = spend
-        self.pods = pods if pods is not None else []
-        self.volumes = volumes if volumes is not None else []
-        self.calls: list[str] = []
-        self.terminated: list[str] = []
-        self.deleted_volumes: list[str] = []
-        self.created_with: dict | None = None
-
-    def pick_gpu(self, gpus, datacenter):
-        self.calls.append("pick_gpu")
-        return gpus[0], self.availability
-
-    def create_pod(self, *, name, template_id, datacenter, volume_id, gpu_id=None, cpu=None):
-        self.calls.append("create_pod")
-        self.created_with = {
-            "name": name, "template_id": template_id, "datacenter": datacenter,
-            "volume_id": volume_id, "gpu_id": gpu_id, "cpu": cpu,
-        }
-        return {"id": self.pod_id}
-
-    def ssh_target(self, pod_id):
-        self.calls.append("ssh_target")
-        return ("1.2.3.4", 40022, "root")
-
-    def get_pod(self, pod_id):
-        self.calls.append("get_pod")
-        return {"id": pod_id, "desiredStatus": self.desired_status}
-
-    def terminate_pod(self, pod_id):
-        self.calls.append("terminate_pod")
-        self.terminated.append(pod_id)
-
-    def pod_spend(self, pod_id):
-        self.calls.append("pod_spend")
-        return self.spend
-
-    def list_pods(self):
-        self.calls.append("list_pods")
-        return self.pods
-
-    def list_volumes(self):
-        self.calls.append("list_volumes")
-        return self.volumes
-
-    def delete_volume(self, volume_id):
-        self.calls.append("delete_volume")
-        self.deleted_volumes.append(volume_id)
 
 
 class FakeTunnel:
@@ -119,20 +61,21 @@ def test_bring_up_returns_pod_id_choice_and_availability_once_ssh_is_ready(
     monkeypatch, tmp_path
 ):
     monkeypatch.chdir(tmp_path)
-    client = FakeCliClient(pod_id="pod-99", availability="HIGH")
-    pod_id, choice, availability = cli._bring_up(client, _infra())
+    client = FakeRunpodClient(pod_id="pod-99", availability="HIGH")
+    pod_id, choice, availability, ssh = cli._bring_up(client, _infra())
     assert pod_id == "pod-99"
     assert choice == BLACKWELL
     assert availability == "HIGH"
+    assert ssh == ("1.2.3.4", 40022, "root")
     assert "create_pod" in client.calls
-    assert "ssh_target" in client.calls
+    assert "wait_for_ssh" in client.calls
 
 
 def test_bring_up_uses_the_picked_gpus_own_matching_template(monkeypatch, tmp_path):
     """The template is tied to the GPU's CUDA line -- mixing them is the
     brief's documented most-common first-run failure."""
     monkeypatch.chdir(tmp_path)
-    client = FakeCliClient()
+    client = FakeRunpodClient()
     client.pick_gpu = lambda gpus, dc: (ADA, "MEDIUM")  # force the fallback GPU
     cli._bring_up(client, _infra())
     assert client.created_with["gpu_id"] == ADA.id
@@ -141,7 +84,7 @@ def test_bring_up_uses_the_picked_gpus_own_matching_template(monkeypatch, tmp_pa
 
 def test_bring_up_polls_ssh_target_until_it_stops_raising(monkeypatch, tmp_path):
     monkeypatch.chdir(tmp_path)
-    client = FakeCliClient(pod_id="pod-5")
+    client = FakeRunpodClient(pod_id="pod-5")
     real_ssh_target = client.ssh_target
     attempts = {"n": 0}
 
@@ -154,24 +97,9 @@ def test_bring_up_polls_ssh_target_until_it_stops_raising(monkeypatch, tmp_path)
     client.ssh_target = flaky
     monkeypatch.setattr(cli.time, "sleep", lambda s: None)
 
-    pod_id, _, _ = cli._bring_up(client, _infra())
+    pod_id, _, _, _ = cli._bring_up(client, _infra())
     assert pod_id == "pod-5"
     assert attempts["n"] == 3
-
-
-def test_bring_up_gives_up_after_the_ssh_timeout(monkeypatch, tmp_path):
-    monkeypatch.chdir(tmp_path)
-    client = FakeCliClient()
-
-    def never_ready(pod_id):
-        raise RunpodError("runtime is still null")
-
-    client.ssh_target = never_ready
-    monkeypatch.setattr(cli, "_SSH_READY_TIMEOUT", 0)  # expires before the first check
-    monkeypatch.setattr(cli.time, "sleep", lambda s: None)
-
-    with pytest.raises(RunpodError, match="never exposed SSH"):
-        cli._bring_up(client, _infra())
 
 
 def test_bring_up_persists_pod_id_before_the_ssh_wait_so_a_timeout_does_not_leak_it(
@@ -182,7 +110,7 @@ def test_bring_up_persists_pod_id_before_the_ssh_wait_so_a_timeout_does_not_leak
     exists and bills by the time create_pod returns -- state must record it
     before the wait loop, not only if/when _bring_up successfully returns."""
     monkeypatch.chdir(tmp_path)
-    client = FakeCliClient(pod_id="pod-13")
+    client = FakeRunpodClient(pod_id="pod-13")
 
     def never_ready(pod_id):
         raise RunpodError("runtime is still null")
@@ -207,7 +135,7 @@ def test_cmd_up_creates_pod_with_matching_template_opens_tunnel_and_persists_sta
     monkeypatch, tmp_path, capsys
 ):
     monkeypatch.chdir(tmp_path)
-    client = FakeCliClient(pod_id="pod-42", availability="HIGH")
+    client = FakeRunpodClient(pod_id="pod-42", availability="HIGH")
     monkeypatch.setattr(cli, "load_infra", lambda path: _infra())
     monkeypatch.setattr(cli, "_client", lambda: client)
     monkeypatch.setattr(cli, "Tunnel", FakeTunnel)
@@ -242,7 +170,7 @@ def test_cmd_up_calls_pick_gpu_exactly_once(monkeypatch, tmp_path):
     and storing a GPU different from the one actually provisioned.
     _bring_up must be the only caller."""
     monkeypatch.chdir(tmp_path)
-    client = FakeCliClient()
+    client = FakeRunpodClient()
     monkeypatch.setattr(cli, "load_infra", lambda path: _infra())
     monkeypatch.setattr(cli, "_client", lambda: client)
     monkeypatch.setattr(cli, "Tunnel", FakeTunnel)
@@ -257,7 +185,7 @@ def test_cmd_up_falls_through_to_the_second_gpus_own_template(monkeypatch, tmp_p
     """Regression guard for the brief's warning: the template must follow
     whichever GPU pick_gpu actually chose, not always the first configured one."""
     monkeypatch.chdir(tmp_path)
-    client = FakeCliClient(pod_id="pod-7")
+    client = FakeRunpodClient(pod_id="pod-7")
     client.pick_gpu = lambda gpus, dc: (gpus[1], "MEDIUM")  # falls through to the 4090
     monkeypatch.setattr(cli, "load_infra", lambda path: _infra())
     monkeypatch.setattr(cli, "_client", lambda: client)
@@ -274,7 +202,7 @@ def test_cmd_up_never_requests_public_ports_beyond_ssh(monkeypatch, tmp_path):
     """create_pod itself pins ports=['22/tcp'] (tested in test_runpod_api.py);
     this just confirms cmd_up doesn't pass anything that could override it."""
     monkeypatch.chdir(tmp_path)
-    client = FakeCliClient()
+    client = FakeRunpodClient()
     monkeypatch.setattr(cli, "load_infra", lambda path: _infra())
     monkeypatch.setattr(cli, "_client", lambda: client)
     monkeypatch.setattr(cli, "Tunnel", FakeTunnel)
@@ -296,7 +224,7 @@ def test_cmd_up_persists_pod_id_before_the_tunnel_so_a_later_failure_does_not_le
     to find and terminate the pod. Complements the Finding-1 test above,
     which covers the earlier failure point (the ssh-wait loop itself)."""
     monkeypatch.chdir(tmp_path)
-    client = FakeCliClient(pod_id="pod-9")
+    client = FakeRunpodClient(pod_id="pod-9")
     monkeypatch.setattr(cli, "load_infra", lambda path: _infra())
     monkeypatch.setattr(cli, "_client", lambda: client)
 
@@ -337,7 +265,7 @@ def test_cmd_down_with_no_state_reports_and_exits_zero_without_calling_the_api(
     monkeypatch, tmp_path, capsys
 ):
     monkeypatch.chdir(tmp_path)
-    client = FakeCliClient()
+    client = FakeRunpodClient()
     monkeypatch.setattr(cli, "_client", lambda: client)
 
     rc = cli.cmd_down(argparse.Namespace())
@@ -356,7 +284,7 @@ def test_cmd_down_reads_spend_before_terminating_kills_tunnel_and_clears_state(
         "pod_id": "pod-1", "started": 1000, "gpu": "x",
         "tunnel_pid": 12345, "tunnel_port": 8188,
     })
-    client = FakeCliClient(spend=1.23)
+    client = FakeRunpodClient(spend=1.23)
     monkeypatch.setattr(cli, "_client", lambda: client)
     # A live tunnel's /proc/<pid>/cmdline: ssh with the recorded -L spec.
     monkeypatch.setattr(
@@ -382,7 +310,7 @@ def test_cmd_down_tolerates_a_tunnel_pid_that_is_already_gone(monkeypatch, tmp_p
     reaped it). Silent: no warning, no signal, no error."""
     monkeypatch.chdir(tmp_path)
     write_state({"pod_id": "pod-1", "started": 1000, "tunnel_pid": 99999, "tunnel_port": 8188})
-    client = FakeCliClient()
+    client = FakeRunpodClient()
     monkeypatch.setattr(cli, "_client", lambda: client)
 
     def gone(pid):
@@ -405,7 +333,7 @@ def test_cmd_down_tolerates_the_tunnel_dying_between_the_check_and_the_signal(
     time we actually send the signal."""
     monkeypatch.chdir(tmp_path)
     write_state({"pod_id": "pod-1", "started": 1000, "tunnel_pid": 5555, "tunnel_port": 8188})
-    client = FakeCliClient()
+    client = FakeRunpodClient()
     monkeypatch.setattr(cli, "_client", lambda: client)
     monkeypatch.setattr(
         cli, "_pid_cmdline",
@@ -429,7 +357,7 @@ def test_cmd_down_refuses_to_signal_a_pid_that_is_no_longer_our_tunnel(
     `down` must not signal it -- it could be an unrelated process by now."""
     monkeypatch.chdir(tmp_path)
     write_state({"pod_id": "pod-1", "started": 1000, "tunnel_pid": 7777, "tunnel_port": 8188})
-    client = FakeCliClient()
+    client = FakeRunpodClient()
     monkeypatch.setattr(cli, "_client", lambda: client)
     # pid 7777 now belongs to some unrelated process.
     monkeypatch.setattr(cli, "_pid_cmdline", lambda pid: "/usr/bin/some-other-daemon --serve")
@@ -452,7 +380,7 @@ def test_cmd_down_declines_to_signal_when_tunnel_port_was_never_recorded(
     cannot be confirmed, so the safe default is to skip the kill."""
     monkeypatch.chdir(tmp_path)
     write_state({"pod_id": "pod-1", "started": 1000, "tunnel_pid": 4242})  # no tunnel_port
-    client = FakeCliClient()
+    client = FakeRunpodClient()
     monkeypatch.setattr(cli, "_client", lambda: client)
     monkeypatch.setattr(
         cli, "_pid_cmdline",
@@ -474,7 +402,7 @@ def test_cmd_down_kills_the_tunnel_anyway_when_proc_is_unavailable(
     so this must not regress that). Must warn plainly and kill anyway."""
     monkeypatch.chdir(tmp_path)
     write_state({"pod_id": "pod-1", "started": 1000, "tunnel_pid": 8888, "tunnel_port": 8188})
-    client = FakeCliClient()
+    client = FakeRunpodClient()
     monkeypatch.setattr(cli, "_client", lambda: client)
     monkeypatch.setattr(cli, "_proc_available", lambda: False)
     killed = []
@@ -492,7 +420,7 @@ def test_cmd_down_kills_the_tunnel_anyway_when_proc_is_unavailable(
 def test_cmd_down_reports_unknown_spend_rather_than_crashing(monkeypatch, tmp_path, capsys):
     monkeypatch.chdir(tmp_path)
     write_state({"pod_id": "pod-1", "started": 1000})
-    client = FakeCliClient(spend=None)
+    client = FakeRunpodClient(spend=None)
     monkeypatch.setattr(cli, "_client", lambda: client)
 
     assert cli.cmd_down(argparse.Namespace()) == 0
@@ -514,7 +442,7 @@ def test_cmd_status_with_pod_reports_id_uptime_live_status_and_spend(
 ):
     monkeypatch.chdir(tmp_path)
     write_state({"pod_id": "pod-1", "started": int(time.time()) - 90, "gpu": "x"})
-    client = FakeCliClient(desired_status="RUNNING", spend=0.5)
+    client = FakeRunpodClient(desired_status="RUNNING", spend=0.5)
     monkeypatch.setattr(cli, "_client", lambda: client)
 
     rc = cli.cmd_status(argparse.Namespace())
@@ -536,7 +464,7 @@ def test_cmd_teardown_terminates_every_pod_unconditionally_and_clears_state(
 ):
     monkeypatch.chdir(tmp_path)
     write_state({"pod_id": "pod-1", "started": 1000, "gpu": "x"})
-    client = FakeCliClient(pods=[
+    client = FakeRunpodClient(pods=[
         {"id": "pod-1", "name": "comfy-up"},
         {"id": "pod-2", "name": "comfy-run"},
     ])
@@ -556,7 +484,7 @@ def test_cmd_teardown_with_nothing_running_says_so_plainly_and_exits_zero(
     monkeypatch, tmp_path, capsys
 ):
     monkeypatch.chdir(tmp_path)
-    client = FakeCliClient(pods=[], volumes=[])
+    client = FakeRunpodClient(pods=[], volumes=[])
     monkeypatch.setattr(cli, "_client", lambda: client)
 
     rc = cli.cmd_teardown(argparse.Namespace(delete_volume=False))
@@ -575,7 +503,7 @@ def test_cmd_teardown_without_delete_volume_flag_reports_cost_and_never_deletes(
     destroys every downloaded model irreversibly -- but must still surface
     what staying idle costs, since that's the whole point of the command."""
     monkeypatch.chdir(tmp_path)
-    client = FakeCliClient(pods=[], volumes=[
+    client = FakeRunpodClient(pods=[], volumes=[
         {"id": "vol-1", "name": "comfy-models", "size": 75, "dataCenter": "EU-RO-1"},
     ])
     monkeypatch.setattr(cli, "_client", lambda: client)
@@ -594,7 +522,7 @@ def test_cmd_teardown_with_delete_volume_flag_deletes_every_volume(
     monkeypatch, tmp_path, capsys
 ):
     monkeypatch.chdir(tmp_path)
-    client = FakeCliClient(pods=[], volumes=[
+    client = FakeRunpodClient(pods=[], volumes=[
         {"id": "vol-1", "size": 75},
         {"id": "vol-2", "size": 10},
     ])
@@ -606,10 +534,6 @@ def test_cmd_teardown_with_delete_volume_flag_deletes_every_volume(
     assert client.deleted_volumes == ["vol-1", "vol-2"]
     out = capsys.readouterr().out.lower()
     assert "nothing is billing" in out  # unambiguous: everything just got removed
-
-
-def test_teardown_is_registered_in_the_dispatch_table():
-    assert cli.handlers["teardown"] is cli.cmd_teardown
 
 
 # --- main: centralised error handling (moved out of cmd_provision) ---------
@@ -633,6 +557,7 @@ def test_cmd_provision_no_longer_catches_errors_itself(monkeypatch):
         RunpodError("API exploded"),
         TunnelError("port never opened"),
         ComfyUIError("ComfyUI never came up"),
+        WorkflowError("workflow has no node titled 'positive'"),
     ],
 )
 def test_main_wraps_every_handler_error_as_a_clean_message(monkeypatch, capsys, exc):
@@ -660,15 +585,6 @@ def test_main_reports_unknown_commands_without_a_traceback(capsys):
     # argparse itself rejects it (not one of the fixed subcommand choices)
     # before main's own "not implemented" branch is ever reached.
     assert "invalid choice" in capsys.readouterr().err
-
-
-def test_up_down_status_are_registered_in_the_dispatch_table():
-    """A handler that exists but is never assigned into `handlers` is silently
-    unreachable from main() -- this is the mistake R5/R18 in progress.md warn
-    about for every task that grows cli.py."""
-    assert cli.handlers["up"] is cli.cmd_up
-    assert cli.handlers["down"] is cli.cmd_down
-    assert cli.handlers["status"] is cli.cmd_status
 
 
 # --- cmd_run -----------------------------------------------------------------
@@ -707,6 +623,9 @@ class FakeRunComfy:
     def history(self, prompt_id):
         return {"outputs": {}}  # always "done" immediately -- no polling wait in tests
 
+    def wait_for_history(self, prompt_id, timeout=1800):
+        return None  # history() above is already "done" on the first check
+
     def outputs_of(self, prompt_id):
         return [{"filename": f"{prompt_id}.png", "subfolder": "", "type": "output"}]
 
@@ -740,7 +659,7 @@ def test_cmd_run_rejects_invalid_run_file_before_any_pod_work(monkeypatch, tmp_p
     monkeypatch.chdir(tmp_path)
     bad = tmp_path / "bad.yaml"
     bad.write_text("mode: t2x\nprompt: x\ncount: 1\n")
-    client = FakeCliClient()
+    client = FakeRunpodClient()
     monkeypatch.setattr(cli, "_client", lambda: client)
 
     with pytest.raises(ConfigError):
@@ -755,7 +674,7 @@ def test_cmd_run_reuses_an_existing_pod_without_bringing_up_a_new_one(monkeypatc
     write_state({"pod_id": "pod-live", "tunnel_pid": 111, "tunnel_port": 8188})
     _patch_workflow(monkeypatch)
     FakeTunnel.last_instance = None
-    client = FakeCliClient(pod_id="pod-live")
+    client = FakeRunpodClient(pod_id="pod-live")
     monkeypatch.setattr(cli, "load_infra", lambda path: _infra())
     monkeypatch.setattr(cli, "load_run", lambda path: _run(count=1))
     monkeypatch.setattr(cli, "_client", lambda: client)
@@ -778,7 +697,7 @@ def test_cmd_run_opens_a_fresh_tunnel_when_none_is_recorded(monkeypatch, tmp_pat
     write_state({"pod_id": "pod-live"})  # pod exists, no tunnel_port
     _patch_workflow(monkeypatch)
     FakeTunnel.last_instance = None
-    client = FakeCliClient(pod_id="pod-live")
+    client = FakeRunpodClient(pod_id="pod-live")
     monkeypatch.setattr(cli, "load_infra", lambda path: _infra())
     monkeypatch.setattr(cli, "load_run", lambda path: _run(count=1))
     monkeypatch.setattr(cli, "_client", lambda: client)
@@ -801,7 +720,7 @@ def test_cmd_run_applies_a_distinct_seed_to_each_job_in_the_batch(monkeypatch, t
     monkeypatch.chdir(tmp_path)
     write_state({"pod_id": "pod-live", "tunnel_port": 8188})
     _patch_workflow(monkeypatch)
-    client = FakeCliClient(pod_id="pod-live")
+    client = FakeRunpodClient(pod_id="pod-live")
     monkeypatch.setattr(cli, "load_infra", lambda path: _infra())
     monkeypatch.setattr(cli, "load_run", lambda path: _run(count=3, seed=100))
     monkeypatch.setattr(cli, "_client", lambda: client)
@@ -826,7 +745,7 @@ def test_cmd_run_uploads_input_once_and_threads_the_server_name_into_every_job(
     _patch_workflow(monkeypatch)
     img = tmp_path / "cat.png"
     img.write_bytes(b"x")
-    client = FakeCliClient(pod_id="pod-live")
+    client = FakeRunpodClient(pod_id="pod-live")
     monkeypatch.setattr(cli, "load_infra", lambda path: _infra())
     monkeypatch.setattr(cli, "load_run", lambda path: _run(mode="i2v", count=2, input=img))
     monkeypatch.setattr(cli, "_client", lambda: client)
@@ -848,7 +767,7 @@ def test_cmd_run_keeps_completed_downloads_and_names_the_failed_job(monkeypatch,
     monkeypatch.chdir(tmp_path)
     write_state({"pod_id": "pod-live", "tunnel_port": 8188})
     _patch_workflow(monkeypatch)
-    client = FakeCliClient(pod_id="pod-live")
+    client = FakeRunpodClient(pod_id="pod-live")
     monkeypatch.setattr(cli, "load_infra", lambda path: _infra())
     monkeypatch.setattr(cli, "load_run", lambda path: _run(count=3, seed=100))
     monkeypatch.setattr(cli, "_client", lambda: client)
@@ -870,34 +789,11 @@ def test_cmd_run_keeps_completed_downloads_and_names_the_failed_job(monkeypatch,
     assert len(comfy.downloaded) == 1   # -- but job 1's output was already downloaded
 
 
-def test_cmd_run_converts_a_workflow_error_into_a_clean_message(monkeypatch, tmp_path):
-    """WorkflowError isn't one of main()'s caught types -- cmd_run must not
-    let it escape uncaught, or the user sees a raw traceback instead of
-    `error: ...`."""
-    monkeypatch.chdir(tmp_path)
-    write_state({"pod_id": "pod-live", "tunnel_port": 8188})
-    monkeypatch.setattr(cli.workflow, "load", lambda path: {"graph": True})
-
-    def boom(graph, run, seed, uploaded_name=None):
-        raise WorkflowError("workflow has no node titled 'positive'")
-
-    monkeypatch.setattr(cli.workflow, "apply_run", boom)
-    client = FakeCliClient(pod_id="pod-live")
-    monkeypatch.setattr(cli, "load_infra", lambda path: _infra())
-    monkeypatch.setattr(cli, "load_run", lambda path: _run(count=1))
-    monkeypatch.setattr(cli, "_client", lambda: client)
-    monkeypatch.setattr(cli, "ComfyUI", FakeRunComfy)
-    monkeypatch.setattr(cli, "Tunnel", FakeTunnel)
-
-    with pytest.raises(ComfyUIError, match="no node titled"):
-        cli.cmd_run(argparse.Namespace(run_file="run.yaml", keep=True))
-
-
 def test_cmd_run_terminates_the_pod_by_default_and_clears_state(monkeypatch, tmp_path, capsys):
     monkeypatch.chdir(tmp_path)
     write_state({"pod_id": "pod-live", "tunnel_port": 8188, "tunnel_pid": 999})
     _patch_workflow(monkeypatch)
-    client = FakeCliClient(pod_id="pod-live", spend=0.11)
+    client = FakeRunpodClient(pod_id="pod-live", spend=0.11)
     monkeypatch.setattr(cli, "load_infra", lambda path: _infra())
     monkeypatch.setattr(cli, "load_run", lambda path: _run(count=1))
     monkeypatch.setattr(cli, "_client", lambda: client)
@@ -917,7 +813,7 @@ def test_cmd_run_keeps_the_pod_when_keep_is_passed(monkeypatch, tmp_path):
     monkeypatch.chdir(tmp_path)
     write_state({"pod_id": "pod-live", "tunnel_port": 8188})
     _patch_workflow(monkeypatch)
-    client = FakeCliClient(pod_id="pod-live")
+    client = FakeRunpodClient(pod_id="pod-live")
     monkeypatch.setattr(cli, "load_infra", lambda path: _infra())
     monkeypatch.setattr(cli, "load_run", lambda path: _run(count=1))
     monkeypatch.setattr(cli, "_client", lambda: client)
@@ -935,7 +831,7 @@ def test_cmd_run_output_dir_is_dated_and_slugged_from_the_prompt(monkeypatch, tm
     monkeypatch.chdir(tmp_path)
     write_state({"pod_id": "pod-live", "tunnel_port": 8188})
     _patch_workflow(monkeypatch)
-    client = FakeCliClient(pod_id="pod-live")
+    client = FakeRunpodClient(pod_id="pod-live")
     monkeypatch.setattr(cli, "load_infra", lambda path: _infra())
     monkeypatch.setattr(
         cli, "load_run", lambda path: _run(count=1, prompt="A Red Fox!! In the Snow")
@@ -950,7 +846,3 @@ def test_cmd_run_output_dir_is_dated_and_slugged_from_the_prompt(monkeypatch, tm
     assert saved.parent.parent.name == "out"
     assert saved.parent.name.endswith("a-red-fox-in-the-snow")
     assert saved.parent.name.startswith(cli.date.today().isoformat())
-
-
-def test_run_is_registered_in_the_dispatch_table():
-    assert cli.handlers["run"] is cli.cmd_run

@@ -7,7 +7,6 @@ dollars — even a 9-hour worst case is about $0.63, once.
 
 from __future__ import annotations
 
-import time
 from dataclasses import dataclass
 
 from .config import Infra
@@ -150,25 +149,13 @@ def provision(client: Client, infra: Infra, volume_size_gb: int = 75) -> str:
     pod_id = str(pod["id"])
     print(f"provisioning pod {pod_id} — terminating it is this function's job")
     try:
-        _wait_for_ssh(client, pod_id)
-        host, port, user = client.ssh_target(pod_id)
+        host, port, user = client.wait_for_ssh(pod_id)
         print(f"downloading {total_gb()} GB — ssh {user}@{host} -p {port}")
         _run_download(host, port, user)
     finally:
         client.terminate_pod(pod_id)
         print(f"terminated {pod_id}")
     return volume_id
-
-
-def _wait_for_ssh(client: Client, pod_id: str, timeout: int = 900) -> None:
-    deadline = time.time() + timeout
-    while time.time() < deadline:
-        try:
-            client.ssh_target(pod_id)
-            return
-        except RunpodError:
-            time.sleep(10)
-    raise RunpodError(f"pod {pod_id} never exposed SSH within {timeout}s")
 
 
 def _run_download(host: str, port: int, user: str) -> None:

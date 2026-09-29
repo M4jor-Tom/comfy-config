@@ -88,6 +88,33 @@ def test_wait_ready_raises_comfyui_error_after_timeout(monkeypatch):
     assert calls["n"] == 0
 
 
+def test_wait_for_history_polls_past_the_pending_state_then_succeeds(monkeypatch):
+    """/history/<id> is {} while pending and {<id>: {...}} once done --
+    wait_for_history must poll through the pending state rather than
+    stopping at the first empty response."""
+    calls = {"n": 0}
+
+    def flaky(url, timeout=None):
+        calls["n"] += 1
+        payload = {} if calls["n"] <= 2 else {"p1": {"outputs": {}}}
+        return FakeResponse(payload)
+
+    monkeypatch.setattr(comfyui_mod.urllib.request, "urlopen", flaky)
+    monkeypatch.setattr(comfyui_mod.time, "sleep", lambda s: None)
+
+    ComfyUI("http://127.0.0.1:8188").wait_for_history("p1", timeout=60)
+
+    assert calls["n"] == 3
+
+
+def test_wait_for_history_raises_comfyui_error_after_timeout(monkeypatch):
+    monkeypatch.setattr(
+        comfyui_mod.urllib.request, "urlopen", lambda url, timeout=None: FakeResponse({})
+    )
+    with pytest.raises(ComfyUIError, match="did not finish within 0s"):
+        ComfyUI("http://127.0.0.1:8188").wait_for_history("p1", timeout=0)
+
+
 # --- queue / history / outputs_of ------------------------------------------
 
 
