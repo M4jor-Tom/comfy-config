@@ -1,7 +1,9 @@
+import urllib.request
+
 import pytest
 
 from comfy_runpod.config import GpuChoice
-from comfy_runpod.runpod_api import Client, RunpodError
+from comfy_runpod.runpod_api import Client, RunpodError, _http
 
 BLACKWELL = GpuChoice(id="NVIDIA RTX PRO 4500 Blackwell", template="wgd3p4n4o6")
 ADA = GpuChoice(id="NVIDIA GeForce RTX 4090", template="cw3nka7d08")
@@ -38,6 +40,33 @@ class FakeTransport:
             if key in path:
                 return value
         return {}
+
+
+def test_http_sets_a_real_user_agent(monkeypatch):
+    """Runpod's edge 403s with Cloudflare error 1010 on urllib's default
+    (effectively absent) User-Agent; any real one clears it. Confirmed live
+    2026-09-29. FakeTransport bypasses _http entirely, so this exercises it
+    directly to keep the regression from becoming invisible again."""
+    captured = {}
+
+    class _Resp:
+        def read(self):
+            return b"{}"
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc):
+            return False
+
+    def fake_urlopen(req, timeout=None):
+        captured["user_agent"] = req.get_header("User-agent")
+        return _Resp()
+
+    monkeypatch.setattr(urllib.request, "urlopen", fake_urlopen)
+    _http("GET", "/pods", None, "fake-key")
+    assert captured["user_agent"]
+    assert "python-urllib" not in captured["user_agent"].lower()
 
 
 def test_pick_gpu_prefers_first_with_capacity():

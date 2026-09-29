@@ -1,11 +1,19 @@
 """comfy — drive ComfyUI on a rented Runpod GPU."""
 
 import argparse
+import os
 import sys
+from pathlib import Path
+
+from .config import ConfigError, load_infra
+from .provision import provision
+from .runpod_api import Client, RunpodError
 
 COMMANDS = ("provision", "up", "run", "down", "status")
 
 handlers = {}
+
+INFRA_PATH = Path("comfy.yaml")
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -19,6 +27,24 @@ def build_parser() -> argparse.ArgumentParser:
     sub.add_parser("down", help="terminate the pod and report spend")
     sub.add_parser("status", help="show pod state and real spend")
     return p
+
+
+def _client() -> Client:
+    return Client(os.environ.get("RUNPOD_API_KEY", ""))
+
+
+def cmd_provision(args) -> int:
+    try:
+        infra = load_infra(INFRA_PATH)
+        volume_id = provision(_client(), infra)
+    except (ConfigError, RunpodError) as e:
+        print(f"error: {e}", file=sys.stderr)
+        return 1
+    print(f"\nvolume_id: {volume_id}\nAdd that to {INFRA_PATH} before `comfy up`.")
+    return 0
+
+
+handlers["provision"] = cmd_provision
 
 
 def main(argv: list[str] | None = None) -> int:

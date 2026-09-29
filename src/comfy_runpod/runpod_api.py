@@ -17,6 +17,11 @@ from .config import GpuChoice
 API_BASE = "https://api.runpod.io/v2"
 VOLUME_MOUNT_PATH = "/workspace"
 
+# Runpod's edge (Cloudflare) 403s with "error code: 1010" — a browser-signature
+# block — on urllib's default request identity. Any explicit, non-empty
+# User-Agent clears it; this one just says honestly what's calling.
+USER_AGENT = "comfy-runpod/0.1.0"
+
 # Minimal Ubuntu image for the provisioning CPU pod. It only needs curl and sshd,
 # both of which Runpod's base image provides.
 CPU_POD_IMAGE = "runpod/base:1.0.2-ubuntu2404"
@@ -35,6 +40,7 @@ def _http(method: str, path: str, body: dict | None, api_key: str) -> dict:
         headers={
             "Authorization": f"Bearer {api_key}",
             "Content-Type": "application/json",
+            "User-Agent": USER_AGENT,
         },
     )
     try:
