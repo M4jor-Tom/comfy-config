@@ -3,7 +3,7 @@
 **As of 2026-09-29.** Written for an agent with no context on this project.
 
 **Nothing is billing.** Zero pods, zero volumes, zero endpoints. Total spent building this:
-**$0.29**. Verify for yourself before you do anything else:
+**$0.98**. Verify for yourself before you do anything else:
 
 ```bash
 nix develop -c bash -c 'source ~/set_runpod_key.sh && comfy teardown'
@@ -22,7 +22,7 @@ was made.
 
 ## State: working end to end
 
-153 tests pass offline. All ten planned tasks are implemented. Every mode has been
+173 tests pass offline. All ten planned tasks are implemented, plus both quality passes. Every mode has been
 validated on real hardware — not mocked, actually generated:
 
 | | Verified live on 2026-09-29 |
@@ -43,7 +43,7 @@ validated on real hardware — not mocked, actually generated:
 export RUNPOD_API_KEY=...        # or: source ~/set_runpod_key.sh
 nix develop
 comfy --help
-nix develop -c python -m pytest tests/ -q     # expect 153 passing
+nix develop -c python -m pytest tests/ -q     # expect 173 passing
 ```
 
 ⚠️ **`nix develop` does not inherit `RUNPOD_API_KEY`.** `comfy` IS on the dev shell PATH (fixed in `cbaf4fb`). Live commands must be shaped:
@@ -127,7 +127,7 @@ tried `count: 2` on a video mode; it should work but will take a while.
 ### 5. Deferred minor findings
 
 These are recorded in the SDD ledger at
-`.superpowers/sdd/2026-09-29-comfy-runpod-harness/progress.md` under lines marked
+`docs/DECISIONS.md` under lines marked
 `minor (deferred)`. None blocks anything. The notable ones:
 
 - `config.write_state` is a bare `write_text`, not atomic.
@@ -170,6 +170,6 @@ These are recorded in the SDD ledger at
 
 Spec → plan → subagent-driven execution, with a fresh implementer per task and a review
 after each. The full audit trail is in
-`.superpowers/sdd/2026-09-29-comfy-runpod-harness/progress.md`: every ruling made, every
+`docs/DECISIONS.md`: every ruling made, every
 finding parked, and why. That directory is gitignored scratch — read it before deleting it,
 it is the only record of decisions that are not visible in the code.
