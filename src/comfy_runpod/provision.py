@@ -116,12 +116,23 @@ def provision(client: Client, infra: Infra, volume_size_gb: int = 75) -> str:
         # arrives (timeout/URLError) leaves an unrecorded volume that costs
         # $5.25/month. Look before creating so a retry after that finds it instead
         # of doubling it.
-        volume_id = next(
-            (str(v["id"]) for v in client.list_volumes()
-             if v.get("name") == "comfy-models" and v.get("id")),
-            None,
-        )
-        if volume_id:
+        matches = [
+            v for v in client.list_volumes()
+            if v.get("name") == "comfy-models" and v.get("id")
+        ]
+        if len(matches) > 1:
+            # This is the exact failure mode the lookup above exists to catch, so
+            # it is the likely case here, not a hypothetical: make it visible
+            # rather than silently picking one and letting both bill forever.
+            print(
+                f"WARNING: found {len(matches)} volumes named comfy-models, not 1 "
+                "— each one bills you monthly, and `comfy teardown` lists them:"
+            )
+            for v in matches:
+                print(f"  - {v['id']}  {v.get('size', '?')} GB")
+            print("Proceeding with the first.")
+        if matches:
+            volume_id = str(matches[0]["id"])
             print(f"found existing volume {volume_id} named comfy-models — reusing it")
         else:
             volume_id = client.create_volume(

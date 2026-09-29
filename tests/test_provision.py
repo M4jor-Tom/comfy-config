@@ -109,7 +109,10 @@ class FakeProvisionClient:
         self.calls.append("create_volume")
         return "vol-created"
 
-    def create_pod(self, **kwargs):
+    def create_pod(self, *, name, template_id, datacenter, volume_id, gpu_id=None, cpu=None):
+        # Keyword-only with the same names as the real Client.create_pod, on
+        # purpose: a misspelled/renamed kwarg at the call site must raise
+        # TypeError here too, not just against the real client.
         self.calls.append("create_pod")
         return {"id": self.pod_id}
 
@@ -153,6 +156,29 @@ def test_provision_creates_a_volume_only_when_none_exists(monkeypatch):
     assert result == "vol-created"
     assert "list_volumes" in client.calls
     assert "create_volume" in client.calls
+
+
+def test_provision_warns_but_proceeds_when_volume_name_is_ambiguous(monkeypatch, capsys):
+    """A duplicate comfy-models volume is exactly the failure mode the round-1 fix
+    guards against, so it is the likely case, not a hypothetical: it must be made
+    visible (id + size of every match, monthly billing, `comfy teardown`), and the
+    run must still proceed rather than fail."""
+    monkeypatch.setattr(provision_mod, "_run_download", lambda host, port, user: None)
+    client = FakeProvisionClient(
+        volumes=[
+            {"id": "vol-a", "name": "comfy-models", "size": 75},
+            {"id": "vol-b", "name": "comfy-models", "size": 75},
+        ]
+    )
+    result = provision_mod.provision(client, _infra(volume_id=None))
+    assert result == "vol-a"  # proceeds with the first
+    assert "create_volume" not in client.calls
+
+    out = capsys.readouterr().out
+    assert "vol-a" in out and "vol-b" in out
+    assert "75" in out
+    assert "monthly" in out.lower()
+    assert "comfy teardown" in out
 
 
 def test_provision_terminates_the_pod_it_created_on_success(monkeypatch):
