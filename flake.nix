@@ -25,18 +25,23 @@
         };
       });
 
-      devShells = forAll (pkgs: {
-        default = pkgs.mkShell {
-          packages = with pkgs; [
-            (python312.withPackages (ps: with ps; [ pyyaml pytest ]))
-            openssh
-            jq
-          ];
-          shellHook = ''
-            export PYTHONPATH=$PWD/src:$PYTHONPATH
-            echo "comfy-runpod dev shell — RUNPOD_API_KEY ''${RUNPOD_API_KEY:+is set}"
+      devShells = forAll (pkgs:
+        let
+          pythonEnv = pkgs.python312.withPackages (ps: with ps; [ pyyaml pytest ]);
+          # A thin shim, not `packages.default`: the built package would bake in
+          # a snapshot of src/ at build time, shadowing the PYTHONPATH trick
+          # below and defeating live-editing -- the entire point of a dev shell.
+          comfyBin = pkgs.writeShellScriptBin "comfy" ''
+            exec ${pythonEnv}/bin/python -m comfy_runpod.cli "$@"
           '';
-        };
-      });
+        in {
+          default = pkgs.mkShell {
+            packages = [ pythonEnv comfyBin pkgs.openssh pkgs.jq ];
+            shellHook = ''
+              export PYTHONPATH=$PWD/src:$PYTHONPATH
+              echo "comfy-runpod dev shell — RUNPOD_API_KEY ''${RUNPOD_API_KEY:+is set}"
+            '';
+          };
+        });
     };
 }
