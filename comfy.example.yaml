@@ -1,0 +1,16 @@
+# Copy to comfy.yaml and fill volume_id after `comfy provision`.
+datacenter: EU-RO-1
+
+# Set by `comfy provision`. Leave blank the first time.
+volume_id:
+
+# Ordered: the first GPU with capacity wins. The template MUST match the
+# GPU's CUDA line — Blackwell needs CUDA 13, Ada needs CUDA 12.8.
+gpus:
+  - { id: "NVIDIA RTX PRO 4500 Blackwell", template: "2lv7ev3wfp" }  # 32 GB, $0.72/hr
+  - { id: "NVIDIA GeForce RTX 4090",       template: "cw3nka7d08" }  # 24 GB, $0.74/hr
+
+# Local watchdog only. Runpod REST v2 has no server-side pod TTL, so this
+# dies if this machine does. The real guard is `comfy run` terminating on
+# completion.
+terminate_after: 3h
